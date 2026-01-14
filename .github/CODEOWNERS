@@ -1,0 +1,11 @@
+# CODEOWNERS
+# Learn more: https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for everything
+*       @your-github-handle
+
+# Docs owners
+/docs/*  @your-github-handle
+
+# CI/automation owners
+/.github/* @your-github-handle

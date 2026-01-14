@@ -1,0 +1,23 @@
+# Automatically label PRs based on changed files
+# https://github.com/actions/labeler
+
+area:backend:
+  - 'src/**'
+  - 'server/**'
+  - 'api/**'
+
+area:frontend:
+  - 'web/**'
+  - 'app/**'
+  - 'frontend/**'
+  - 'ui/**'
+
+docs:
+  - 'docs/**'
+  - '**/*.md'
+
+ci:
+  - '.github/**'
+
+config:
+  - '**/*.{json,yaml,yml,toml}'

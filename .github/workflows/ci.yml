@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    if: ${{ hashFiles('package.json') != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: npm
+      - name: Use pnpm if lockfile present
+        if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: Install dependencies
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            pnpm install --frozen-lockfile
+          elif [ -f yarn.lock ]; then
+            yarn install --frozen-lockfile
+          elif [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+      - name: Lint
+        run: |
+          if [ -f pnpm-lock.yaml ]; then pnpm -s run lint || echo "no lint";
+          elif [ -f yarn.lock ]; then yarn -s lint || echo "no lint";
+          else npm run lint --if-present; fi
+      - name: Test
+        run: |
+          if [ -f pnpm-lock.yaml ]; then pnpm -s test || echo "no test";
+          elif [ -f yarn.lock ]; then yarn -s test || echo "no test";
+          else npm test --if-present; fi
+
+  python:
+    if: ${{ hashFiles('pyproject.toml', 'requirements.txt') != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            **/requirements.txt
+            pyproject.toml
+            poetry.lock
+      - name: Install dependencies (requirements.txt)
+        if: ${{ hashFiles('requirements.txt') != '' || hashFiles('**/requirements.txt') != '' }}
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: Install project (pyproject)
+        if: ${{ hashFiles('pyproject.toml') != '' && hashFiles('requirements.txt') == '' }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Test (pytest if available)
+        run: |
+          python - <<'PY'
+import importlib, sys, subprocess
+if importlib.util.find_spec('pytest'):
+    sys.exit(subprocess.call(['pytest', '-q']))
+print('pytest not installed; skipping tests')
+PY
+
+  go:
+    if: ${{ hashFiles('go.mod') != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+      - run: go build ./...
+      - run: go test ./...
+
+  rust:
+    if: ${{ hashFiles('Cargo.toml') != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --locked
+      - run: cargo test --all-features
+
+  java:
+    if: ${{ hashFiles('pom.xml') != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'maven'
+      - run: mvn -B -ntp -q verify

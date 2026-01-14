@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+
+# TODO: Replace URLs with your repository links.
+# Example: https://github.com/<owner>/<repo>/discussions
+contact_links:
+  - name: Ask a question or get help
+    url: https://github.com/<owner>/<repo>/discussions
+    about: Please use Discussions for questions, ideas, and help
+  - name: Security policy
+    url: https://github.com/<owner>/<repo>/security/policy
+    about: Learn how to report security vulnerabilities

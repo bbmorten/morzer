@@ -1,0 +1,25 @@
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+categories:
+  - title: '🚀 Features'
+    labels: ['feat', 'feature', 'enhancement']
+  - title: '🐛 Fixes'
+    labels: ['fix', 'bug']
+  - title: '🧰 Maintenance'
+    labels: ['chore', 'dependencies', 'build']
+  - title: '🧪 Tests'
+    labels: ['test']
+  - title: '📝 Docs'
+    labels: ['docs']
+  - title: '⚙️ CI/CD'
+    labels: ['ci']
+change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
+no-changes-template: 'No user-facing changes in this release.'
+version-resolver:
+  major:
+    labels: ['semver:major']
+  minor:
+    labels: ['semver:minor', 'feat']
+  patch:
+    labels: ['semver:patch', 'fix', 'chore', 'docs', 'ci', 'test']
+  default: patch
