@@ -2,10 +2,10 @@
 # Learn more: https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 
 # Default owners for everything
-*       @your-github-handle
+*       @bbmorten
 
 # Docs owners
-/docs/*  @your-github-handle
+/docs/*  @bbmorten
 
 # CI/automation owners
-/.github/* @your-github-handle
+/.github/* @bbmorten
