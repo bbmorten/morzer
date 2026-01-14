@@ -1,0 +1,154 @@
+:root {
+  --bg: #0b0d10;
+  --panel: #11151a;
+  --text: #e7eef7;
+  --muted: #9fb0c3;
+  --border: #223040;
+  --accent: #4f8cff;
+  --danger: #ff5f57;
+  --warn: #ffbd2e;
+  --ok: #28c840;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: -apple-system, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  background: radial-gradient(1200px 800px at 30% 0%, #101a28 0%, var(--bg) 60%);
+  color: var(--text);
+}
+
+.container {
+  padding: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.h1 {
+  font-size: 18px;
+  margin: 0;
+  letter-spacing: 0.2px;
+}
+
+.sub {
+  color: var(--muted);
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.errorText {
+  color: var(--danger);
+}
+
+.panel {
+  background: color-mix(in srgb, var(--panel), transparent 10%);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+input[type='text'], input[type='number'] {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #0b0f14;
+  color: var(--text);
+}
+
+input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+}
+
+button {
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #0b0f14;
+  color: var(--text);
+  cursor: pointer;
+}
+
+button.primary {
+  background: color-mix(in srgb, var(--accent), #0b0f14 70%);
+  border-color: color-mix(in srgb, var(--accent), var(--border) 55%);
+}
+
+button.danger {
+  background: color-mix(in srgb, var(--danger), #0b0f14 75%);
+  border-color: color-mix(in srgb, var(--danger), var(--border) 55%);
+}
+
+.tableWrap {
+  margin-top: 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+th, td {
+  padding: 8px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border), transparent 35%);
+  white-space: nowrap;
+}
+
+th {
+  position: sticky;
+  top: 0;
+  background: #0d1218;
+  text-align: left;
+  color: var(--muted);
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.footerRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

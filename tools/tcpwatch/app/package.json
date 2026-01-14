@@ -1,0 +1,54 @@
+{
+  "name": "tcpwatch-app",
+  "private": true,
+  "version": "0.1.0",
+  "description": "macOS Electron UI for tcpwatch",
+  "main": "dist-electron/electron/main.js",
+  "type": "module",
+  "scripts": {
+    "build:tcpwatch": "cd .. && go build -o tcpwatch",
+    "dev": "npm run build:tcpwatch && concurrently -k -n VITE,ELECTRON -c blue,green \"vite\" \"wait-on http://127.0.0.1:5173 && npm run build:electron && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "build": "npm run build:tcpwatch && npm run build:renderer && npm run build:electron",
+    "build:renderer": "vite build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "pack:dir": "npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir",
+    "pack": "npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^31.6.0",
+    "electron-builder": "^24.13.3",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.7",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.morzer.tcpwatch",
+    "productName": "tcpwatch",
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "electron/preload.cjs"
+    ],
+    "extraResources": [
+      {
+        "from": "../tcpwatch",
+        "to": "tcpwatch"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": ["dmg", "zip"]
+    }
+  }
+}
