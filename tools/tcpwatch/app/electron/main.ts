@@ -54,18 +54,30 @@ function createWindow() {
     console.error('[renderer] did-fail-load', { errorCode, errorDescription, validatedURL })
   })
 
+  mainWindow.webContents.on('dom-ready', () => {
+    console.log('[renderer] dom-ready', { url: mainWindow?.webContents.getURL() })
+  })
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('[renderer] did-finish-load', { url: mainWindow?.webContents.getURL() })
+  })
+
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     console.error('[renderer] render-process-gone', details)
   })
 
   const devUrl = process.env.VITE_DEV_SERVER_URL
   if (devUrl) {
+    console.log('[main] devUrl:', devUrl)
     mainWindow.loadURL(devUrl)
-    if (process.env.OPEN_DEVTOOLS === '1') {
-      mainWindow.webContents.openDevTools({ mode: 'detach' })
-    }
   } else {
-    mainWindow.loadFile(path.join(app.getAppPath(), 'dist/index.html'))
+    const indexPath = path.join(app.getAppPath(), 'renderer-dist/index.html')
+    console.log('[main] indexPath:', indexPath, 'exists=', fs.existsSync(indexPath))
+    mainWindow.loadFile(indexPath)
+  }
+
+  if (process.env.OPEN_DEVTOOLS === '1') {
+    mainWindow.webContents.openDevTools({ mode: 'detach' })
   }
 
   mainWindow.on('closed', () => {

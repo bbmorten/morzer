@@ -1,7 +1,8 @@
 {
   "name": "tcpwatch-app",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "author": "Mehmet Bulent Morten",
   "description": "macOS Electron UI for tcpwatch",
   "main": "dist-electron/electron/main.js",
   "type": "module",
@@ -36,7 +37,7 @@
     "appId": "com.morzer.tcpwatch",
     "productName": "tcpwatch",
     "files": [
-      "dist/**",
+      "renderer-dist/**",
       "dist-electron/**",
       "electron/preload.cjs"
     ],
@@ -48,7 +49,7 @@
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
-      "target": ["dmg", "zip"]
+      "target": ["dmg", "zip", "pkg"]
     }
   }
 }
