@@ -16,13 +16,18 @@ concurrency:
 
 jobs:
   go:
-    if: ${{ hashFiles('go.mod') != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: 'stable'
+      - name: Ensure Go module exists
+        run: |
+          if [ ! -f go.mod ]; then
+            echo "go.mod not found. This repository is configured as a Go project; add go.mod to enable builds/tests."
+            exit 1
+          fi
       - name: Verify formatting (gofmt)
         run: |
           unformatted=$(gofmt -l .)
