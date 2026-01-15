@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 contextBridge.exposeInMainWorld('tcpwatch', {
   start: (opts) => ipcRenderer.invoke('tcpwatch:start', opts),
   snapshot: (opts) => ipcRenderer.invoke('tcpwatch:snapshot', opts),
+  killProcess: (pid) => ipcRenderer.invoke('tcpwatch:killProcess', pid),
   stop: () => ipcRenderer.invoke('tcpwatch:stop'),
   isRunning: () => ipcRenderer.invoke('tcpwatch:isRunning'),
   onSnapshot: (cb) => {

@@ -230,6 +230,41 @@ app.whenReady().then(() => {
     return await runSnapshot(opts)
   })
 
+  ipcMain.handle('tcpwatch:killProcess', async (_evt, pid: unknown) => {
+    const parsed = typeof pid === 'number' ? pid : Number(pid)
+    const targetPid = Math.trunc(parsed)
+    if (!Number.isFinite(targetPid) || targetPid <= 1) {
+      throw new Error(`Invalid PID: ${String(pid)}`)
+    }
+
+    const forbidden = new Set<number>([process.pid])
+    if (child?.pid) forbidden.add(child.pid)
+    const rendererPid = mainWindow?.webContents.getOSProcessId()
+    if (typeof rendererPid === 'number') forbidden.add(rendererPid)
+
+    if (forbidden.has(targetPid)) {
+      throw new Error(`Refusing to terminate protected PID ${targetPid}`)
+    }
+
+    // Check existence/permission.
+    try {
+      process.kill(targetPid, 0)
+    } catch (e) {
+      const err = e as NodeJS.ErrnoException
+      if (err.code === 'ESRCH') throw new Error(`PID ${targetPid} does not exist`)
+      if (err.code === 'EPERM') throw new Error(`Permission denied to signal PID ${targetPid}`)
+      throw new Error(`Failed to check PID ${targetPid}: ${err.message}`)
+    }
+
+    try {
+      process.kill(targetPid, 'SIGTERM')
+    } catch (e) {
+      const err = e as NodeJS.ErrnoException
+      if (err.code === 'EPERM') throw new Error(`Permission denied to terminate PID ${targetPid}`)
+      throw new Error(`Failed to terminate PID ${targetPid}: ${err.message}`)
+    }
+  })
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

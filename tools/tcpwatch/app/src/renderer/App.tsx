@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Snapshot, StartOptions } from './types'
+import type { Row, Snapshot, StartOptions } from './types'
 import { ConnectionsTable } from './components/ConnectionsTable'
 
 export function App() {
@@ -85,6 +85,34 @@ export function App() {
     setLastError(null)
     const snap = await window.tcpwatch.snapshot(startOptions)
     setSnapshot(snap)
+  }
+
+  const onRowDoubleClick = async (row: Row) => {
+    if (!window.tcpwatch) return
+
+    const pid = row.PID
+    if (!Number.isFinite(pid) || pid <= 1) return
+
+    const label = row.Process?.trim() ? `${row.Process} (PID ${pid})` : `PID ${pid}`
+    const ok = window.confirm(`Terminate ${label}?\n\nThis will send SIGTERM to the process.`)
+    if (!ok) return
+
+    try {
+      await window.tcpwatch.killProcess(pid)
+
+      // If we're not streaming, refresh once so the table updates.
+      if (!running) {
+        try {
+          const snap = await window.tcpwatch.snapshot(startOptions)
+          setSnapshot(snap)
+        } catch {
+          // ignore refresh errors
+        }
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setLastError(msg)
+    }
   }
 
   const updatedLabel = snapshot?.updated ? new Date(snapshot.updated).toLocaleString() : '—'
@@ -186,7 +214,7 @@ export function App() {
           </div>
         </div>
 
-        <ConnectionsTable rows={rows} />
+        <ConnectionsTable rows={rows} onRowDoubleClick={onRowDoubleClick} />
 
         <div className="footerRow">
           <div>Tip: run as admin if PID names are missing.</div>

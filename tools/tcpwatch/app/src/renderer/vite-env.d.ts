@@ -5,6 +5,7 @@ declare global {
     tcpwatch: {
       start: (opts: import('./types').StartOptions) => Promise<void>
       snapshot: (opts: import('./types').StartOptions) => Promise<import('./types').Snapshot>
+      killProcess: (pid: number) => Promise<void>
       stop: () => Promise<void>
       isRunning: () => Promise<boolean>
       onSnapshot: (cb: (snap: import('./types').Snapshot) => void) => () => void
