@@ -48,6 +48,17 @@ jobs:
         working-directory: tools/tcpwatch/app
         run: npm ci
 
+      - name: Derive app version
+        id: ver
+        shell: bash
+        run: |
+          ref="${{ (github.event_name == 'workflow_dispatch' && inputs.release_tag != '') && inputs.release_tag || github.ref_name }}"
+          ver="${ref#tcpwatch-app-v}"
+          ver="${ver#tcpwatch-v}"
+          echo "tag=$ref" >> "$GITHUB_OUTPUT"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "Using version: $ver (from tag: $ref)"
+
       - name: Build renderer + electron
         working-directory: tools/tcpwatch/app
         run: npm run build
@@ -55,8 +66,9 @@ jobs:
       - name: Package (zip + pkg)
         working-directory: tools/tcpwatch/app
         run: |
-          CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac zip --arm64
-          CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac pkg --arm64
+          v="${{ steps.ver.outputs.version }}"
+          CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --config.extraMetadata.version="$v" --mac zip --arm64
+          CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --config.extraMetadata.version="$v" --mac pkg --arm64
 
       - name: Upload artifacts (workflow run)
         uses: actions/upload-artifact@v4

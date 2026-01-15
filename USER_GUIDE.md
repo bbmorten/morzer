@@ -16,6 +16,23 @@ Because the app may be **unsigned** (developer builds), macOS may block it the f
 - Finder → Applications → right‑click `tcpwatch` → **Open** → confirm.
 - Or: System Settings → Privacy & Security → allow the blocked app.
 
+#### Removing the quarantine attribute
+
+If macOS shows "tcpwatch cannot be verified" or similar warnings, you can remove the quarantine attribute that macOS adds to downloaded files:
+
+```bash
+# For the PKG installer (before installing)
+sudo xattr -rd com.apple.quarantine /path/to/tcpwatch-0.1.1-arm64.pkg
+
+# For the installed binary (if already installed)
+sudo xattr -rd com.apple.quarantine /usr/local/bin/tcpwatch
+
+# For the app bundle
+sudo xattr -rd com.apple.quarantine /Applications/tcpwatch.app
+```
+
+After running the appropriate command, you can install or run the app normally.
+
 ## What you see
 
 Each row is a single TCP socket/connection.
