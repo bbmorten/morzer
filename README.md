@@ -18,6 +18,7 @@ If macOS blocks the app (unsigned builds), use Finder → right‑click `tcpwatc
 - Click **Run once** to take a single snapshot.
 - Click **Start** to stream updates; change filters while running to apply instantly.
 - Double‑click a row to terminate that row’s PID (after confirmation).
+- Use **Capture (tshark)** to record traffic and split by connection; if **Port** is set, the capture is limited to `tcp port <port>`.
 
 For details (filters, troubleshooting, permissions), see `USER_GUIDE.md`.
 
@@ -58,9 +59,11 @@ This repo includes a workflow that builds and uploads macOS artifacts (`.pkg` + 
 Tag example:
 
 ```bash
-git tag tcpwatch-app-v0.1.1
-git push origin tcpwatch-app-v0.1.1
+git tag tcpwatch-app-vX.Y.Z
+git push origin tcpwatch-app-vX.Y.Z
 ```
+
+Maintainers: see `.github/specs/tcpwatch-release.md` for the release/packaging checklist.
 
 The app expects the `tcpwatch` binary to be bundled via `extraResources`.
 

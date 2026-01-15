@@ -139,7 +139,8 @@ export function App() {
     const status = await window.tcpwatch.startCapture({
       dumpDir: dumpDir.trim(),
       ifaceId: captureIfaceId,
-      durationSeconds: duration
+      durationSeconds: duration,
+      port: typeof startOptions.port === 'number' && Number.isFinite(startOptions.port) ? startOptions.port : undefined
     })
     setCaptureStatus(status)
   }

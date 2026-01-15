@@ -37,6 +37,7 @@ type CaptureStatus = {
   ifaceId?: string
   startedAt?: string
   durationSeconds?: number
+  port?: number
   splitting?: boolean
   splitDir?: string
 }
@@ -476,7 +477,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle(
     'tcpwatch:startCapture',
-    async (_evt, opts: { dumpDir: string; ifaceId: string; durationSeconds: number }) => {
+    async (_evt, opts: { dumpDir: string; ifaceId: string; durationSeconds: number; port?: unknown }) => {
       if (captureChild) throw new Error('Capture already running')
 
       const tshark = resolveTsharkPath()
@@ -486,10 +487,20 @@ app.whenReady().then(() => {
       const ifaceId = String(opts.ifaceId)
       if (!ifaceId.trim()) throw new Error('Capture interface is required')
 
+      let port: number | undefined
+      if (opts.port !== undefined && opts.port !== null && String(opts.port).trim() !== '') {
+        const parsed = Math.trunc(Number(opts.port))
+        if (!Number.isFinite(parsed) || parsed < 1 || parsed > 65535) {
+          throw new Error(`Invalid port: ${String(opts.port)}`)
+        }
+        port = parsed
+      }
+
       const ts = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '')
       const filePath = path.join(opts.dumpDir, `tcpwatch-capture-${ts}.pcapng`)
 
-      const args = ['-i', ifaceId, '-n', '-f', 'tcp', '-a', `duration:${durationSeconds}`, '-w', filePath]
+      const captureFilter = port ? `tcp port ${port}` : 'tcp'
+      const args = ['-i', ifaceId, '-n', '-f', captureFilter, '-a', `duration:${durationSeconds}`, '-w', filePath]
       const proc = spawn(tshark, args, { stdio: ['ignore', 'ignore', 'pipe'] })
       captureChild = proc
 
@@ -499,6 +510,7 @@ app.whenReady().then(() => {
         filePath,
         ifaceId,
         durationSeconds,
+        port,
         startedAt: new Date().toISOString(),
         splitting: false,
         splitDir: undefined

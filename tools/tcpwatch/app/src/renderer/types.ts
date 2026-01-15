@@ -43,6 +43,7 @@ export type CaptureStartOptions = {
   dumpDir: string
   ifaceId: string
   durationSeconds: number
+  port?: number
 }
 
 export type CaptureSplitProgress = {

@@ -9,6 +9,13 @@ You can install via either:
 - **PKG installer** (`tcpwatch-…​.pkg`): run it and follow the prompts.
 - **ZIP** (`tcpwatch-…​.zip`): unzip, then drag `tcpwatch.app` into `/Applications`.
 
+## Downloads / Releases
+
+If you received the app from GitHub:
+
+- **Releases page**: download the `.pkg` or `.zip` attached to a tagged release (tags look like `tcpwatch-app-vX.Y.Z`).
+- **Actions artifacts**: maintainers can also download build artifacts from the `tcpwatch (macOS)` workflow run.
+
 ### First run / Gatekeeper
 
 Because the app may be **unsigned** (developer builds), macOS may block it the first time.
@@ -75,8 +82,11 @@ The app can start a short packet capture using `tshark` (from Wireshark) and the
    - Choose a **Dump folder**
    - Pick an **Interface**
    - Set **Max duration** (1–300 seconds)
+  - Optional: set the **Port** filter (under Filters) to scope capture to a single port.
 3. Click **Start capture**.
 4. Click **Stop capture** to stop early (otherwise it stops automatically at the max duration).
+
+If **Port** is set, the app starts `tshark` with a capture filter `tcp port <port>`, so only matching traffic is written to the `.pcapng`.
 
 ### What happens after capture
 

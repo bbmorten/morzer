@@ -19,6 +19,8 @@ Thanks for taking the time to contribute! This guide helps you get started quick
 - Linked to related issue(s) when applicable.
 - Includes tests or rationale if tests are not needed.
 - Updates relevant docs or examples.
+- For any user-facing behavior change: update `README.md` and `USER_GUIDE.md`.
+- If you changed developer workflows/release/packaging: update `.github/skills/tcpwatch-electron/SKILL.md`.
 
 ## Commit messages (recommended)
 We recommend using Conventional Commits:
