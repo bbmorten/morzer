@@ -24,6 +24,7 @@ jobs:
         with:
           go-version: "stable"
           cache: true
+          cache-dependency-path: tools/tcpwatch/go.sum
 
       - uses: actions/setup-node@v4
         with:
