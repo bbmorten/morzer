@@ -11,6 +11,9 @@ declare global {
       startCapture: (opts: import('./types').CaptureStartOptions) => Promise<import('./types').CaptureStatus>
       stopCapture: () => Promise<void>
       getCaptureStatus: () => Promise<import('./types').CaptureStatus>
+      selectSplitFolder: () => Promise<string | null>
+      readSplitIndex: (splitDir: string) => Promise<import('./types').SplitIndex>
+      openInWireshark: (filePath: string) => Promise<void>
       stop: () => Promise<void>
       isRunning: () => Promise<boolean>
       onSnapshot: (cb: (snap: import('./types').Snapshot) => void) => () => void

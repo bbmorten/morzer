@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import { spawn, spawnSync, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
@@ -157,6 +157,36 @@ function resolveTsharkPath(): string {
   }
 
   throw new Error('tshark not found. Install Wireshark (includes tshark) or set TSHARK_BIN=/abs/path/to/tshark')
+}
+
+type WiresharkLauncher =
+  | { kind: 'open'; app: string }
+  | { kind: 'exec'; path: string }
+  | null
+
+function resolveWiresharkLauncher(): WiresharkLauncher {
+  const env = process.env.WIRESHARK_BIN
+  if (env && fs.existsSync(env)) {
+    // Allow either a .app bundle path or an executable.
+    if (env.endsWith('.app')) return { kind: 'open', app: env }
+    return { kind: 'exec', path: env }
+  }
+
+  const appBundle = '/Applications/Wireshark.app'
+  if (fs.existsSync(appBundle)) return { kind: 'open', app: appBundle }
+
+  const candidates = ['/usr/local/bin/wireshark', '/opt/homebrew/bin/wireshark']
+  for (const cand of candidates) {
+    if (fs.existsSync(cand)) return { kind: 'exec', path: cand }
+  }
+
+  const which = spawnSync('which', ['wireshark'], { encoding: 'utf8' })
+  if (which.status === 0) {
+    const p = (which.stdout ?? '').trim()
+    if (p && fs.existsSync(p)) return { kind: 'exec', path: p }
+  }
+
+  return null
 }
 
 async function listCaptureInterfaces(): Promise<CaptureInterface[]> {
@@ -512,6 +542,81 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('tcpwatch:getCaptureStatus', async () => captureStatus)
+
+  ipcMain.handle('tcpwatch:selectSplitFolder', async () => {
+    const res = await dialog.showOpenDialog({
+      title: 'Choose split capture folder',
+      properties: ['openDirectory']
+    })
+    if (res.canceled) return null
+    const p = res.filePaths?.[0]
+    return p ?? null
+  })
+
+  ipcMain.handle('tcpwatch:readSplitIndex', async (_evt, splitDir: unknown) => {
+    const dir = String(splitDir ?? '').trim()
+    if (!dir) throw new Error('Split folder is required')
+
+    const directIndex = path.join(dir, 'index.json')
+    let indexPath = directIndex
+
+    if (!fs.existsSync(indexPath)) {
+      // If user picked the dump root, try to find the most recent split folder.
+      try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true })
+        const candidates = entries
+          .filter((e) => e.isDirectory() && e.name.startsWith('tcpwatch-split-'))
+          .map((e) => {
+            const splitFolder = path.join(dir, e.name)
+            const idx = path.join(splitFolder, 'index.json')
+            if (!fs.existsSync(idx)) return null
+            const st = fs.statSync(splitFolder)
+            return { idx, mtimeMs: st.mtimeMs }
+          })
+          .filter(Boolean) as Array<{ idx: string; mtimeMs: number }>
+
+        candidates.sort((a, b) => b.mtimeMs - a.mtimeMs)
+        if (candidates[0]) indexPath = candidates[0].idx
+      } catch {
+        // ignore
+      }
+    }
+
+    if (!fs.existsSync(indexPath)) throw new Error(`index.json not found in ${dir}`)
+    const raw = fs.readFileSync(indexPath, 'utf8')
+    const parsed = JSON.parse(raw) as unknown
+    return parsed
+  })
+
+  ipcMain.handle('tcpwatch:openInWireshark', async (_evt, filePath: unknown) => {
+    const p = String(filePath ?? '').trim()
+    if (!p) throw new Error('File path is required')
+    if (!fs.existsSync(p)) throw new Error(`File not found: ${p}`)
+
+    // Prefer explicit Wireshark open.
+    const launcher = resolveWiresharkLauncher()
+    if (launcher?.kind === 'open') {
+      // Use macOS 'open -a' so Wireshark is used even if default app differs.
+      const res = spawnSync('open', ['-a', launcher.app, p], { encoding: 'utf8' })
+      if (res.status !== 0) {
+        const msg = (res.stderr ?? '').trim() || `open failed (code=${res.status})`
+        throw new Error(msg)
+      }
+      return
+    }
+    if (launcher?.kind === 'exec') {
+      const res = spawnSync(launcher.path, [p], { encoding: 'utf8' })
+      if (res.status !== 0) {
+        const msg = (res.stderr ?? '').trim() || `wireshark failed (code=${res.status})`
+        throw new Error(msg)
+      }
+      return
+    }
+
+    // Fallback: open with default associated app.
+    const err = await shell.openPath(p)
+    if (err) throw new Error(err)
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

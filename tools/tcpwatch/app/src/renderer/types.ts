@@ -51,3 +51,10 @@ export type CaptureSplitProgress = {
   streamId: number
   file: string
 }
+
+export type SplitIndex = {
+  captureFile: string
+  splitDir: string
+  createdAt: string
+  streams: Array<{ id: number; file: string }>
+}

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CaptureInterface, CaptureSplitProgress, CaptureStatus, Row, Snapshot, StartOptions } from './types'
 import { ConnectionsTable } from './components/ConnectionsTable'
+import { CapturesPage } from './components/CapturesPage'
 
 export function App() {
+  const [page, setPage] = useState<'connections' | 'captures'>('connections')
   const [running, setRunning] = useState(false)
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [lastError, setLastError] = useState<string | null>(null)
@@ -188,9 +190,28 @@ export function App() {
           <div className="sub">Updated: {updatedLabel} • Rows: {rows.length}</div>
           {lastError ? <div className="sub errorText">{lastError}</div> : null}
         </div>
-        <span className="badge">macOS</span>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button
+            className={page === 'connections' ? 'primary' : undefined}
+            onClick={() => setPage('connections')}
+            title="Live connections"
+          >
+            Connections
+          </button>
+          <button
+            className={page === 'captures' ? 'primary' : undefined}
+            onClick={() => setPage('captures')}
+            title="Split captures"
+          >
+            Captures
+          </button>
+          <span className="badge">macOS</span>
+        </div>
       </div>
 
+      {page === 'captures' ? (
+        <CapturesPage captureStatus={captureStatus} />
+      ) : (
       <div className="panel">
         <div className="controls">
           <div>
@@ -362,6 +383,7 @@ export function App() {
           <div>Data source: gopsutil/sysctl</div>
         </div>
       </div>
+      )}
     </div>
   )
 }

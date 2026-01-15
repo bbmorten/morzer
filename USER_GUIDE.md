@@ -85,6 +85,12 @@ The app can start a short packet capture using `tshark` (from Wireshark) and the
   - `tcpwatch-split-<timestamp>/tcp-stream-00000.pcapng`, etc.
 - It also writes `tcpwatch-split-<timestamp>/index.json` listing all generated stream files.
 
+### Viewing split files
+
+- Open the **Captures** page in the app.
+- Select the split folder (or it will auto-select the most recent split from the last capture).
+- Double-click a stream row to open the `.pcapng` in **Wireshark**.
+
 ## Filters
 
 All filters are optional.
