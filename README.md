@@ -1,6 +1,25 @@
 # tcpwatch (Electron)
 
+Looking for end-user instructions? See: `USER_GUIDE.md`.
+
 This is the macOS Electron UI for the `tcpwatch` Go CLI.
+
+## Quick Start
+
+### 1) Install
+
+- If you have a `.pkg` installer: run it.
+- If you have a `.zip`: unzip and drag `tcpwatch.app` into `/Applications`.
+
+If macOS blocks the app (unsigned builds), use Finder → right‑click `tcpwatch` → **Open**.
+
+### 2) Use
+
+- Click **Run once** to take a single snapshot.
+- Click **Start** to stream updates; change filters while running to apply instantly.
+- Double‑click a row to terminate that row’s PID (after confirmation).
+
+For details (filters, troubleshooting, permissions), see `USER_GUIDE.md`.
 
 ## Prereqs
 

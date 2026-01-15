@@ -1,0 +1,115 @@
+# tcpwatch (macOS) — User Guide
+
+`tcpwatch` is a macOS desktop app that shows live TCP connections on your machine and (optionally) lets you terminate the owning process.
+
+## Install
+
+You can install via either:
+
+- **PKG installer** (`tcpwatch-…​.pkg`): run it and follow the prompts.
+- **ZIP** (`tcpwatch-…​.zip`): unzip, then drag `tcpwatch.app` into `/Applications`.
+
+### First run / Gatekeeper
+
+Because the app may be **unsigned** (developer builds), macOS may block it the first time.
+
+- Finder → Applications → right‑click `tcpwatch` → **Open** → confirm.
+- Or: System Settings → Privacy & Security → allow the blocked app.
+
+## What you see
+
+Each row is a single TCP socket/connection.
+
+Columns:
+
+- **PROTO**: `tcp`, `tcp4`, `tcp6`
+- **LOCAL**: local address + port
+- **REMOTE**: remote address + port
+- **STATE**: TCP state (e.g. `ESTABLISHED`, `LISTEN`, `CLOSE_WAIT`)
+- **PID**: owning process ID
+- **PROCESS**: process name (best effort; may be blank depending on permissions)
+
+## Controls
+
+### Start / Stop (streaming)
+
+- **Start** begins streaming updates at the configured interval.
+- **Stop** stops streaming.
+
+While streaming, edits to filters (PID/Port/State/Process/Include LISTEN) automatically apply.
+
+### Run once (snapshot)
+
+- **Run once** fetches a single snapshot and updates the table.
+
+## Filters
+
+All filters are optional.
+
+- **Interval (ms)**: refresh period. Lower = more CPU.
+- **State CSV**: comma-separated states, e.g. `ESTABLISHED,CLOSE_WAIT`.
+- **PID**: show only rows with that owning PID.
+- **Port**: matches **local OR remote** port.
+- **Process**: case-insensitive substring match against the process name.
+- **Include LISTEN**: if unchecked, LISTEN sockets are excluded.
+
+## Terminating a process (double-click)
+
+To terminate the owning process for a row:
+
+1. **Double-click** the row.
+2. Confirm the prompt.
+
+What happens:
+
+- The app sends **SIGTERM** to that PID.
+- If you don’t have permission, you’ll see an error like **“Permission denied”**.
+- The app refuses to terminate protected PIDs (the app itself and its helper process).
+
+Safety notes:
+
+- Some processes may ignore SIGTERM.
+- Terminating system processes can cause instability.
+- If you need “force kill” behavior (SIGKILL), request it explicitly; it is not enabled by default.
+
+## Permissions & missing process names
+
+macOS may restrict visibility into other processes.
+
+If you see missing `PROCESS` names or can’t terminate a PID:
+
+- Try running the CLI directly from Terminal as admin (for debugging):
+
+  ```bash
+  cd tools/tcpwatch
+  sudo ./tcpwatch
+  ```
+
+- For the desktop app, you typically need to run it normally; it will show what macOS allows.
+
+## Troubleshooting
+
+### App window is blank
+
+Run the app from Terminal to capture logs:
+
+```bash
+OPEN_DEVTOOLS=1 ELECTRON_ENABLE_LOGGING=1 /Applications/tcpwatch.app/Contents/MacOS/tcpwatch
+```
+
+This opens DevTools and prints main/renderer load diagnostics to the terminal.
+
+### No data / empty table
+
+- Try **Run once**.
+- Remove all filters (PID/Port/State/Process) and try again.
+- Ensure **Include LISTEN** is enabled if you expect LISTEN sockets.
+
+## Uninstall
+
+- If installed via ZIP: delete `/Applications/tcpwatch.app`.
+- If installed via PKG: you can still remove `/Applications/tcpwatch.app` (the installer does not create required system services).
+
+## Privacy
+
+The app reads local network socket metadata and process names (when available). It does not send that data anywhere by default.
