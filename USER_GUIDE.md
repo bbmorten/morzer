@@ -42,6 +42,32 @@ While streaming, edits to filters (PID/Port/State/Process/Include LISTEN) automa
 
 - **Run once** fetches a single snapshot and updates the table.
 
+## Packet capture (tshark)
+
+The app can start a short packet capture using `tshark` (from Wireshark) and then split the capture into per-connection files.
+
+### Prerequisites
+
+- Install **Wireshark** (it includes the `tshark` CLI).
+- Capturing packets may require elevated privileges or capture permissions on macOS.
+
+### How to capture
+
+1. Click **Start** (so tcpwatch is streaming).
+2. In the **Capture (tshark)** section:
+   - Choose a **Dump folder**
+   - Pick an **Interface**
+   - Set **Max duration** (1–300 seconds)
+3. Click **Start capture**.
+4. Click **Stop capture** to stop early (otherwise it stops automatically at the max duration).
+
+### What happens after capture
+
+- The app writes one capture file: `tcpwatch-capture-<timestamp>.pcapng`.
+- After capture stops, it automatically **splits** by `tcp.stream` into a folder like:
+  - `tcpwatch-split-<timestamp>/tcp-stream-00000.pcapng`, etc.
+- It also writes `tcpwatch-split-<timestamp>/index.json` listing all generated stream files.
+
 ## Filters
 
 All filters are optional.

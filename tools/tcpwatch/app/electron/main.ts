@@ -1,7 +1,7 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, spawnSync, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import readline from 'node:readline'
 
 type StartOptions = {
@@ -28,6 +28,26 @@ type Snapshot = {
 
 let mainWindow: BrowserWindow | null = null
 let child: ChildProcessWithoutNullStreams | null = null
+
+type CaptureInterface = { id: string; name: string; description?: string }
+type CaptureStatus = {
+  running: boolean
+  dumpDir?: string
+  filePath?: string
+  ifaceId?: string
+  startedAt?: string
+  durationSeconds?: number
+  splitting?: boolean
+  splitDir?: string
+}
+
+let captureChild: ChildProcess | null = null
+let captureStatus: CaptureStatus = { running: false }
+
+function sendCaptureStatus(partial?: Partial<CaptureStatus>) {
+  captureStatus = { ...captureStatus, ...(partial ?? {}) }
+  mainWindow?.webContents.send('tcpwatch:captureStatus', captureStatus)
+}
 
 function createWindow() {
   const preloadPath = path.join(app.getAppPath(), 'electron/preload.cjs')
@@ -115,6 +135,151 @@ function resolveTcpwatchPath(): string {
   if (fs.existsSync(fallback)) return fallback
 
   throw new Error('tcpwatch binary not found. Build it with: cd tools/tcpwatch && go build -o tcpwatch')
+}
+
+function resolveTsharkPath(): string {
+  const env = process.env.TSHARK_BIN
+  if (env && fs.existsSync(env)) return env
+
+  const candidates = [
+    '/Applications/Wireshark.app/Contents/MacOS/tshark',
+    '/usr/local/bin/tshark',
+    '/opt/homebrew/bin/tshark'
+  ]
+  for (const cand of candidates) {
+    if (fs.existsSync(cand)) return cand
+  }
+
+  const which = spawnSync('which', ['tshark'], { encoding: 'utf8' })
+  if (which.status === 0) {
+    const p = (which.stdout ?? '').trim()
+    if (p && fs.existsSync(p)) return p
+  }
+
+  throw new Error('tshark not found. Install Wireshark (includes tshark) or set TSHARK_BIN=/abs/path/to/tshark')
+}
+
+async function listCaptureInterfaces(): Promise<CaptureInterface[]> {
+  const tshark = resolveTsharkPath()
+  return await new Promise<CaptureInterface[]>((resolve, reject) => {
+    const proc = spawn(tshark, ['-D'], { stdio: ['ignore', 'pipe', 'pipe'] })
+    let out = ''
+    let err = ''
+    proc.stdout.on('data', (b) => (out += b.toString('utf8')))
+    proc.stderr.on('data', (b) => (err += b.toString('utf8')))
+    proc.on('error', reject)
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(err.trim() || `tshark -D failed (code=${code})`))
+        return
+      }
+
+      const ifaces: CaptureInterface[] = []
+      for (const line of out.split(/\r?\n/)) {
+        const trimmed = line.trim()
+        if (!trimmed) continue
+        // Example: "1. en0 (Wi-Fi)"
+        const m = trimmed.match(/^(\d+)\.\s+([^\s]+)\s*(?:\((.*)\))?$/)
+        if (!m) continue
+        const id = m[1]
+        const name = m[2]
+        const description = m[3]
+        ifaces.push({ id, name, description })
+      }
+      resolve(ifaces)
+    })
+  })
+}
+
+function stopCaptureChild() {
+  if (!captureChild) return
+  try {
+    captureChild.kill('SIGTERM')
+  } catch {
+    // ignore
+  }
+}
+
+async function splitCaptureByTcpStream(captureFile: string, dumpDir: string) {
+  const tshark = resolveTsharkPath()
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '')
+  const splitDir = path.join(dumpDir, `tcpwatch-split-${ts}`)
+  fs.mkdirSync(splitDir, { recursive: true })
+
+  sendCaptureStatus({ splitting: true, splitDir })
+  mainWindow?.webContents.send('tcpwatch:captureSplitStart', { captureFile, splitDir })
+
+  const streamIds = await new Promise<number[]>((resolve, reject) => {
+    const proc = spawn(tshark, ['-r', captureFile, '-T', 'fields', '-e', 'tcp.stream', '-Y', 'tcp'], {
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+    let out = ''
+    let err = ''
+    proc.stdout.on('data', (b) => (out += b.toString('utf8')))
+    proc.stderr.on('data', (b) => (err += b.toString('utf8')))
+    proc.on('error', reject)
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(err.trim() || `tshark stream listing failed (code=${code})`))
+        return
+      }
+      const set = new Set<number>()
+      for (const line of out.split(/\r?\n/)) {
+        const t = line.trim()
+        if (!t) continue
+        const n = Number(t)
+        if (Number.isFinite(n)) set.add(n)
+      }
+      resolve(Array.from(set).sort((a, b) => a - b))
+    })
+  })
+
+  const index: {
+    captureFile: string
+    splitDir: string
+    createdAt: string
+    streams: Array<{ id: number; file: string }>
+  } = {
+    captureFile,
+    splitDir,
+    createdAt: new Date().toISOString(),
+    streams: []
+  }
+
+  const total = streamIds.length
+  for (let i = 0; i < total; i++) {
+    const id = streamIds[i]
+    const fileName = `tcp-stream-${String(id).padStart(5, '0')}.pcapng`
+    const outFile = path.join(splitDir, fileName)
+
+    await new Promise<void>((resolve, reject) => {
+      const proc = spawn(tshark, ['-r', captureFile, '-Y', `tcp.stream==${id}`, '-w', outFile], {
+        stdio: ['ignore', 'ignore', 'pipe']
+      })
+      let err = ''
+      proc.stderr.on('data', (b) => (err += b.toString('utf8')))
+      proc.on('error', reject)
+      proc.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(err.trim() || `tshark split failed for tcp.stream=${id} (code=${code})`))
+          return
+        }
+        resolve()
+      })
+    })
+
+    index.streams.push({ id, file: fileName })
+    mainWindow?.webContents.send('tcpwatch:captureSplitProgress', {
+      current: i + 1,
+      total,
+      streamId: id,
+      file: fileName
+    })
+  }
+
+  fs.writeFileSync(path.join(splitDir, 'index.json'), JSON.stringify(index, null, 2), 'utf8')
+  mainWindow?.webContents.send('tcpwatch:captureSplitDone', { splitDir, totalStreams: total })
+  sendCaptureStatus({ splitting: false })
 }
 
 function stopChild() {
@@ -264,6 +429,89 @@ app.whenReady().then(() => {
       throw new Error(`Failed to terminate PID ${targetPid}: ${err.message}`)
     }
   })
+
+  ipcMain.handle('tcpwatch:selectDumpFolder', async () => {
+    const res = await dialog.showOpenDialog({
+      title: 'Choose capture output folder',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    if (res.canceled) return null
+    const p = res.filePaths?.[0]
+    return p ?? null
+  })
+
+  ipcMain.handle('tcpwatch:listCaptureInterfaces', async () => {
+    return await listCaptureInterfaces()
+  })
+
+  ipcMain.handle(
+    'tcpwatch:startCapture',
+    async (_evt, opts: { dumpDir: string; ifaceId: string; durationSeconds: number }) => {
+      if (captureChild) throw new Error('Capture already running')
+
+      const tshark = resolveTsharkPath()
+      if (!opts.dumpDir || !fs.existsSync(opts.dumpDir)) throw new Error('Dump folder does not exist')
+
+      const durationSeconds = Math.max(1, Math.min(300, Math.trunc(Number(opts.durationSeconds))))
+      const ifaceId = String(opts.ifaceId)
+      if (!ifaceId.trim()) throw new Error('Capture interface is required')
+
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '')
+      const filePath = path.join(opts.dumpDir, `tcpwatch-capture-${ts}.pcapng`)
+
+      const args = ['-i', ifaceId, '-n', '-f', 'tcp', '-a', `duration:${durationSeconds}`, '-w', filePath]
+      const proc = spawn(tshark, args, { stdio: ['ignore', 'ignore', 'pipe'] })
+      captureChild = proc
+
+      sendCaptureStatus({
+        running: true,
+        dumpDir: opts.dumpDir,
+        filePath,
+        ifaceId,
+        durationSeconds,
+        startedAt: new Date().toISOString(),
+        splitting: false,
+        splitDir: undefined
+      })
+
+      proc.stderr.on('data', (buf) => {
+        const msg = buf.toString('utf8').trim()
+        if (msg) mainWindow?.webContents.send('tcpwatch:captureLog', { message: msg })
+      })
+
+      proc.on('exit', async (code, signal) => {
+        if (captureChild === proc) captureChild = null
+        sendCaptureStatus({ running: false })
+        mainWindow?.webContents.send('tcpwatch:captureStopped', { code, signal })
+
+        // Only attempt split if a capture file exists.
+        try {
+          if (captureStatus.filePath && fs.existsSync(captureStatus.filePath) && captureStatus.dumpDir) {
+            await splitCaptureByTcpStream(captureStatus.filePath, captureStatus.dumpDir)
+          }
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          mainWindow?.webContents.send('tcpwatch:error', { message: `Capture split failed: ${msg}` })
+          sendCaptureStatus({ splitting: false })
+        }
+
+        if (code !== 0) {
+          mainWindow?.webContents.send('tcpwatch:error', {
+            message: `tshark exited (code=${code}, signal=${signal ?? 'none'}). You may need admin privileges or capture permissions.`
+          })
+        }
+      })
+
+      return captureStatus
+    }
+  )
+
+  ipcMain.handle('tcpwatch:stopCapture', async () => {
+    if (!captureChild) return
+    stopCaptureChild()
+  })
+
+  ipcMain.handle('tcpwatch:getCaptureStatus', async () => captureStatus)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

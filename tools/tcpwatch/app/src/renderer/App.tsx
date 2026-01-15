@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Row, Snapshot, StartOptions } from './types'
+import type { CaptureInterface, CaptureSplitProgress, CaptureStatus, Row, Snapshot, StartOptions } from './types'
 import { ConnectionsTable } from './components/ConnectionsTable'
 
 export function App() {
@@ -14,6 +14,13 @@ export function App() {
   const [proc, setProc] = useState<string>('')
   const [includeListen, setIncludeListen] = useState(true)
 
+  const [dumpDir, setDumpDir] = useState<string>('')
+  const [captureIfaces, setCaptureIfaces] = useState<CaptureInterface[]>([])
+  const [captureIfaceId, setCaptureIfaceId] = useState<string>('')
+  const [captureDurationSec, setCaptureDurationSec] = useState<number>(300)
+  const [captureStatus, setCaptureStatus] = useState<CaptureStatus | null>(null)
+  const [splitProgress, setSplitProgress] = useState<CaptureSplitProgress | null>(null)
+
   useEffect(() => {
     if (!window.tcpwatch) {
       setLastError('Preload bridge not available (window.tcpwatch is undefined).')
@@ -25,12 +32,25 @@ export function App() {
       setLastError(null)
     })
     const offErr = window.tcpwatch.onError((e) => setLastError(e.message))
+    const offCapStatus = window.tcpwatch.onCaptureStatus((s) => setCaptureStatus(s))
+    const offSplit = window.tcpwatch.onCaptureSplitProgress((p) => setSplitProgress(p))
 
     window.tcpwatch.isRunning().then(setRunning).catch(() => {})
+    window.tcpwatch.getCaptureStatus().then(setCaptureStatus).catch(() => {})
+
+    window.tcpwatch
+      .listCaptureInterfaces()
+      .then((ifs) => {
+        setCaptureIfaces(ifs)
+        if (!captureIfaceId && ifs.length > 0) setCaptureIfaceId(ifs[0].id)
+      })
+      .catch(() => {})
 
     return () => {
       offSnap()
       offErr()
+      offCapStatus()
+      offSplit()
     }
   }, [])
 
@@ -85,6 +105,47 @@ export function App() {
     setLastError(null)
     const snap = await window.tcpwatch.snapshot(startOptions)
     setSnapshot(snap)
+  }
+
+  const onPickDumpFolder = async () => {
+    if (!window.tcpwatch) return
+    const picked = await window.tcpwatch.selectDumpFolder()
+    if (picked) setDumpDir(picked)
+  }
+
+  const onRefreshIfaces = async () => {
+    if (!window.tcpwatch) return
+    setLastError(null)
+    try {
+      const ifs = await window.tcpwatch.listCaptureInterfaces()
+      setCaptureIfaces(ifs)
+      if (!ifs.some((x) => x.id === captureIfaceId)) {
+        setCaptureIfaceId(ifs[0]?.id ?? '')
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setLastError(msg)
+    }
+  }
+
+  const onStartCapture = async () => {
+    if (!window.tcpwatch) return
+    setLastError(null)
+    setSplitProgress(null)
+    const duration = Math.max(1, Math.min(300, Math.trunc(Number(captureDurationSec))))
+    setCaptureDurationSec(duration)
+    const status = await window.tcpwatch.startCapture({
+      dumpDir: dumpDir.trim(),
+      ifaceId: captureIfaceId,
+      durationSeconds: duration
+    })
+    setCaptureStatus(status)
+  }
+
+  const onStopCapture = async () => {
+    if (!window.tcpwatch) return
+    setLastError(null)
+    await window.tcpwatch.stopCapture()
   }
 
   const onRowDoubleClick = async (row: Row) => {
@@ -211,6 +272,86 @@ export function App() {
           <div>
             <label>Status</label>
             <div className="badge">{running ? 'running' : 'stopped'}</div>
+          </div>
+        </div>
+
+        <div className="controls" style={{ marginTop: 12 }}>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div className="sub" style={{ marginBottom: 6 }}>Capture (tshark)</div>
+          </div>
+          <div style={{ gridColumn: '1 / span 3' }}>
+            <label>Dump folder</label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button onClick={onPickDumpFolder}>Choose…</button>
+              <div className="sub" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={dumpDir || ''}>
+                {dumpDir ? dumpDir : 'No folder selected'}
+              </div>
+            </div>
+          </div>
+          <div>
+            <label>Interface</label>
+            <select value={captureIfaceId} onChange={(e) => setCaptureIfaceId(e.target.value)}>
+              {captureIfaces.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.id}. {i.name}{i.description ? ` (${i.description})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label>Max duration (sec)</label>
+            <input
+              type="number"
+              min={1}
+              max={300}
+              step={1}
+              value={captureDurationSec}
+              onChange={(e) => setCaptureDurationSec(Number(e.target.value))}
+            />
+          </div>
+          <div>
+            <label>Capture</label>
+            {!captureStatus?.running ? (
+              <button
+                className="primary"
+                onClick={onStartCapture}
+                disabled={!dumpDir.trim() || !captureIfaceId || !running}
+                title={!running ? 'Start tcpwatch streaming first' : undefined}
+              >
+                Start capture
+              </button>
+            ) : (
+              <button className="danger" onClick={onStopCapture}>Stop capture</button>
+            )}
+          </div>
+          <div>
+            <label>Capture status</label>
+            <div className="badge">{captureStatus?.running ? 'capturing' : (captureStatus?.splitting ? 'splitting' : 'idle')}</div>
+          </div>
+          <div>
+            <label>Interfaces</label>
+            <button onClick={onRefreshIfaces}>Refresh</button>
+          </div>
+
+          {captureStatus?.filePath ? (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <div className="sub">Capture file: {captureStatus.filePath}</div>
+            </div>
+          ) : null}
+          {captureStatus?.splitDir ? (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <div className="sub">Split output: {captureStatus.splitDir}</div>
+            </div>
+          ) : null}
+          {splitProgress ? (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <div className="sub">
+                Splitting… {splitProgress.current}/{splitProgress.total} (tcp.stream={splitProgress.streamId}) → {splitProgress.file}
+              </div>
+            </div>
+          ) : null}
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div className="sub">Requires Wireshark/tshark installed. Capture may require elevated permissions.</div>
           </div>
         </div>
 
