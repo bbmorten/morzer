@@ -36,6 +36,7 @@ When you implement a change (code, packaging, workflow, docs):
 	- If the UI has a port filter, capture should be scoped accordingly (currently `tcp port <port>`).
 	- Split output `index.json` includes per-stream endpoints and best-effort reverse-DNS hostnames.
 		- Reverse DNS can be disabled with `TCPWATCH_RDNS=0`.
+		- Tuning: `TCPWATCH_RDNS_TIMEOUT_MS` and `TCPWATCH_RDNS_CONCURRENCY`.
 
 ## Release / packaging
 

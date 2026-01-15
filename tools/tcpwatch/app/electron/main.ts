@@ -3,7 +3,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { spawn, spawnSync, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import readline from 'node:readline'
-import { reverse as dnsReverse } from 'node:dns/promises'
+import { reverse as dnsReverse, lookupService as dnsLookupService } from 'node:dns/promises'
 
 type StartOptions = {
   intervalMs: number
@@ -393,6 +393,12 @@ async function splitCaptureByTcpStream(captureFile: string, dumpDir: string) {
 
   const enableRdns = process.env.TCPWATCH_RDNS !== '0'
   if (enableRdns) {
+    const timeoutEnv = Number(process.env.TCPWATCH_RDNS_TIMEOUT_MS)
+    const rdnsTimeoutMs = Number.isFinite(timeoutEnv) ? Math.max(200, Math.min(10000, Math.trunc(timeoutEnv))) : 2000
+
+    const concEnv = Number(process.env.TCPWATCH_RDNS_CONCURRENCY)
+    const rdnsConcurrency = Number.isFinite(concEnv) ? Math.max(1, Math.min(32, Math.trunc(concEnv))) : 8
+
     const ipSet = new Set<string>()
     for (const m of metaByStream.values()) {
       if (m.src?.ip) ipSet.add(m.src.ip)
@@ -401,10 +407,22 @@ async function splitCaptureByTcpStream(captureFile: string, dumpDir: string) {
 
     const ips = Array.from(ipSet)
     const cache = new Map<string, string[]>()
-    await mapWithConcurrency(ips, 8, async (ip) => {
+    await mapWithConcurrency(ips, rdnsConcurrency, async (ip) => {
       try {
-        const names = await withTimeout(dnsReverse(ip), 900, `reverse DNS for ${ip}`)
-        if (Array.isArray(names) && names.length) cache.set(ip, names)
+        // 1) Try PTR (reverse DNS)
+        const names = await withTimeout(dnsReverse(ip), rdnsTimeoutMs, `reverse DNS for ${ip}`).catch(() => [])
+        if (Array.isArray(names) && names.length) {
+          cache.set(ip, names)
+          return null
+        }
+
+        // 2) Fallback: system resolver / getnameinfo (can use mDNS/Bonjour on macOS)
+        // Port is required by API; use 0 because we only care about the hostname.
+        const res = await withTimeout(dnsLookupService(ip, 0), rdnsTimeoutMs, `lookupService for ${ip}`).catch(() => null)
+        const host = res && typeof (res as { hostname?: unknown }).hostname === 'string' ? (res as { hostname: string }).hostname : ''
+        if (host && host.trim() && host.trim() !== ip) {
+          cache.set(ip, [host.trim()])
+        }
       } catch {
         // best effort
       }

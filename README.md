@@ -22,6 +22,8 @@ If macOS blocks the app (unsigned builds), use Finder → right‑click `tcpwatc
 - In **Captures**, each stream includes a human-friendly description (endpoints + best-effort reverse DNS).
 - In **Captures**, use **Search (Description)** to find streams by IP or FQDN.
 
+Reverse lookups are best-effort (DNS/mDNS dependent). You can disable them with `TCPWATCH_RDNS=0`.
+
 For details (filters, troubleshooting, permissions), see `USER_GUIDE.md`.
 
 ## Prereqs

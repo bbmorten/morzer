@@ -99,8 +99,11 @@ The `index.json` also includes **best-effort metadata** per stream (source/desti
 
 Notes:
 
-- Reverse lookups depend on your DNS/network and may return nothing.
-- If you want to disable reverse-DNS lookups (faster splitting), run the app with `TCPWATCH_RDNS=0`.
+- Reverse lookups are inherently best-effort: many IPs have no PTR record, and local devices may only resolve via mDNS/Bonjour.
+- If you want to disable reverse lookups (faster splitting), run the app with `TCPWATCH_RDNS=0`.
+- Tuning knobs (optional):
+  - `TCPWATCH_RDNS_TIMEOUT_MS` (default `2000`)
+  - `TCPWATCH_RDNS_CONCURRENCY` (default `8`)
 
 ### Viewing split files
 
