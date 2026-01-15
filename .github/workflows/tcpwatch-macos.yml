@@ -24,7 +24,9 @@ jobs:
         with:
           go-version: "stable"
           cache: true
-          cache-dependency-path: tools/tcpwatch/go.sum
+          cache-dependency-path: |
+            tools/tcpwatch/go.sum
+            tools/tcpwatch/go.mod
 
       - uses: actions/setup-node@v4
         with:
@@ -48,7 +50,8 @@ jobs:
       - name: Package (zip + pkg)
         working-directory: tools/tcpwatch/app
         run: |
-          npx electron-builder --mac zip --mac pkg --arm64
+          CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac zip --arm64
+          CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac pkg --arm64
 
       - name: Upload artifacts (workflow run)
         uses: actions/upload-artifact@v4
