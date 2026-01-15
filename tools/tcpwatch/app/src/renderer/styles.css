@@ -149,6 +149,36 @@ th {
   font-size: 12px;
 }
 
+.mb6 { margin-bottom: 6px; }
+
+/* Captures page helpers (avoid inline styles) */
+.capGridAll { grid-column: 1 / -1; }
+.capGridSpan3 { grid-column: 1 / span 3; }
+.capGridFrom4 { grid-column: 4 / -1; }
+
+.capRowFlex {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.capEllipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capClickableRow { cursor: pointer; }
+
+.capDescCell {
+  max-width: 520px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capPad12 { padding: 12px; }
+
 @media (max-width: 900px) {
   .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

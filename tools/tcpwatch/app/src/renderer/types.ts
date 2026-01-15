@@ -54,8 +54,15 @@ export type CaptureSplitProgress = {
 }
 
 export type SplitIndex = {
+  version?: number
   captureFile: string
   splitDir: string
   createdAt: string
-  streams: Array<{ id: number; file: string }>
+  streams: Array<{
+    id: number
+    file: string
+    src?: { ip?: string; port?: number; hostnames?: string[] }
+    dst?: { ip?: string; port?: number; hostnames?: string[] }
+    description?: string
+  }>
 }

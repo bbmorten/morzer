@@ -1,22 +1,37 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { CaptureStatus } from '../types'
-
-type SplitIndex = {
-  captureFile: string
-  splitDir: string
-  createdAt: string
-  streams: Array<{ id: number; file: string }>
-}
+import type { CaptureStatus, SplitIndex } from '../types'
 
 export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus | null }) {
   const [splitDir, setSplitDir] = useState<string>('')
   const [index, setIndex] = useState<SplitIndex | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [descFilter, setDescFilter] = useState<string>('')
 
   useEffect(() => {
     const fromStatus = captureStatus?.splitDir
     if (fromStatus) setSplitDir(fromStatus)
   }, [captureStatus?.splitDir])
+
+  useEffect(() => {
+    // Reset search when switching folders so the table doesn't appear "empty".
+    setDescFilter('')
+  }, [splitDir])
+
+  function formatEndpoint(ep: SplitIndex['streams'][number]['src'] | undefined): string {
+    if (!ep?.ip) return ''
+    const host = (ep.hostnames ?? []).find((h) => h && h.trim())?.trim()
+    const addr = host && host !== ep.ip ? `${host} (${ep.ip})` : ep.ip
+    const port = typeof ep.port === 'number' ? `:${ep.port}` : ''
+    return `${addr}${port}`
+  }
+
+  function getDescription(s: SplitIndex['streams'][number]): string {
+    if (s.description && s.description.trim()) return s.description.trim()
+    const left = formatEndpoint(s.src)
+    const right = formatEndpoint(s.dst)
+    if (left && right) return `${left} → ${right}`
+    return ''
+  }
 
   const canLoad = Boolean(window.tcpwatch && splitDir.trim())
 
@@ -46,7 +61,15 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canLoad, splitDir])
 
-  const rows = useMemo(() => index?.streams ?? [], [index?.streams])
+  const rows = useMemo(() => {
+    const all = index?.streams ?? []
+    const q = descFilter.trim().toLowerCase()
+    if (!q) return all
+    return all.filter((s) => getDescription(s).toLowerCase().includes(q))
+  }, [descFilter, index?.streams])
+
+  const totalCount = index?.streams?.length ?? 0
+  const shownCount = rows.length
 
   const onOpen = async (fileName: string) => {
     if (!window.tcpwatch || !index) return
@@ -62,16 +85,16 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
   return (
     <div className="panel">
       <div className="controls">
-        <div style={{ gridColumn: '1 / -1' }}>
-          <div className="sub" style={{ marginBottom: 6 }}>Split Captures</div>
+        <div className="capGridAll">
+          <div className="sub mb6">Split Captures</div>
           {error ? <div className="sub errorText">{error}</div> : null}
         </div>
 
-        <div style={{ gridColumn: '1 / span 3' }}>
+        <div className="capGridSpan3">
           <label>Split folder</label>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div className="capRowFlex">
             <button onClick={onPickSplitFolder}>Choose…</button>
-            <div className="sub" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={splitDir || ''}>
+            <div className="sub capEllipsis" title={splitDir || ''}>
               {splitDir ? splitDir : 'No folder selected'}
             </div>
           </div>
@@ -82,7 +105,32 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
           <button onClick={onLoad} disabled={!canLoad}>Load</button>
         </div>
 
-        <div style={{ gridColumn: '1 / -1' }}>
+        <div className="capGridSpan3">
+          <label htmlFor="descFilter">Search (Description)</label>
+          <div className="capRowFlex">
+            <input
+              id="descFilter"
+              type="text"
+              placeholder="Type IP / hostname (FQDN)…"
+              value={descFilter}
+              onChange={(e) => setDescFilter(e.target.value)}
+            />
+            <button onClick={() => setDescFilter('')} disabled={!descFilter.trim()} title="Clear search">
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <div className="capGridFrom4">
+          <div className="sub mb6">
+            Results
+          </div>
+          <div className="sub">
+            {shownCount} / {totalCount}
+          </div>
+        </div>
+
+        <div className="capGridAll">
           <div className="sub">
             Tip: double-click a stream to open in Wireshark.
           </div>
@@ -95,6 +143,7 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
             <thead>
               <tr>
                 <th>TCP STREAM</th>
+                <th>DESCRIPTION</th>
                 <th>FILE</th>
               </tr>
             </thead>
@@ -103,10 +152,13 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
                 <tr
                   key={s.id}
                   onDoubleClick={() => onOpen(s.file)}
-                  style={{ cursor: 'pointer' }}
+                  className="capClickableRow"
                   title="Double-click to open in Wireshark"
                 >
                   <td>{s.id}</td>
+                  <td className="capDescCell" title={getDescription(s) || ''}>
+                    {getDescription(s)}
+                  </td>
                   <td>{s.file}</td>
                 </tr>
               ))}
@@ -114,7 +166,7 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
           </table>
         </div>
       ) : (
-        <div className="sub" style={{ padding: 12 }}>
+        <div className="sub capPad12">
           Select a split folder to view files.
         </div>
       )}

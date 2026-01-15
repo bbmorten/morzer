@@ -95,11 +95,21 @@ If **Port** is set, the app starts `tshark` with a capture filter `tcp port <por
   - `tcpwatch-split-<timestamp>/tcp-stream-00000.pcapng`, etc.
 - It also writes `tcpwatch-split-<timestamp>/index.json` listing all generated stream files.
 
+The `index.json` also includes **best-effort metadata** per stream (source/destination IP:port) and, when possible, **reverse-DNS hostnames** for IPs.
+
+Notes:
+
+- Reverse lookups depend on your DNS/network and may return nothing.
+- If you want to disable reverse-DNS lookups (faster splitting), run the app with `TCPWATCH_RDNS=0`.
+
 ### Viewing split files
 
 - Open the **Captures** page in the app.
 - Select the split folder (or it will auto-select the most recent split from the last capture).
+- Use the **Search (Description)** box to find streams by IP address or hostname.
 - Double-click a stream row to open the `.pcapng` in **Wireshark**.
+
+The Captures table shows a **Description** column (derived from the stream endpoints and reverse-DNS hostnames when available).
 
 ## Filters
 

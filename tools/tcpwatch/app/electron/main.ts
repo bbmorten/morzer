@@ -3,6 +3,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { spawn, spawnSync, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import readline from 'node:readline'
+import { reverse as dnsReverse } from 'node:dns/promises'
 
 type StartOptions = {
   intervalMs: number
@@ -265,12 +266,177 @@ async function splitCaptureByTcpStream(captureFile: string, dumpDir: string) {
     })
   })
 
+  type StreamEndpoint = {
+    ip?: string
+    port?: number
+    hostnames?: string[]
+  }
+
+  type StreamMeta = {
+    src?: StreamEndpoint
+    dst?: StreamEndpoint
+    description?: string
+  }
+
+  function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+    let timer: NodeJS.Timeout | undefined
+    const timeout = new Promise<T>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    })
+    return Promise.race([p, timeout]).finally(() => {
+      if (timer) clearTimeout(timer)
+    })
+  }
+
+  async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+    const results: R[] = new Array(items.length)
+    let nextIndex = 0
+
+    const workers = Array.from({ length: Math.max(1, limit) }, async () => {
+      while (true) {
+        const idx = nextIndex
+        nextIndex++
+        if (idx >= items.length) return
+        results[idx] = await fn(items[idx])
+      }
+    })
+
+    await Promise.all(workers)
+    return results
+  }
+
+  function pickBestHostname(names: string[] | undefined): string | undefined {
+    const n = (names ?? []).find((s) => s && s.trim())
+    return n ? n.trim() : undefined
+  }
+
+  function formatEndpoint(ep: StreamEndpoint | undefined): string {
+    if (!ep?.ip) return ''
+    const host = pickBestHostname(ep.hostnames)
+    const addr = host && host !== ep.ip ? `${host} (${ep.ip})` : ep.ip
+    const port = typeof ep.port === 'number' ? `:${ep.port}` : ''
+    return `${addr}${port}`
+  }
+
+  async function loadStreamEndpoints(): Promise<Map<number, StreamMeta>> {
+    // Get one packet row per stream-ish (we take the first we see for each stream).
+    // Supports both IPv4 and IPv6 by probing ip.* and ipv6.* fields.
+    const meta = new Map<number, StreamMeta>()
+    const out = await new Promise<string>((resolve, reject) => {
+      const args = [
+        '-r',
+        captureFile,
+        '-Y',
+        'tcp',
+        '-T',
+        'fields',
+        '-E',
+        'separator=\t',
+        '-E',
+        'occurrence=f',
+        '-e',
+        'tcp.stream',
+        '-e',
+        'ip.src',
+        '-e',
+        'ipv6.src',
+        '-e',
+        'tcp.srcport',
+        '-e',
+        'ip.dst',
+        '-e',
+        'ipv6.dst',
+        '-e',
+        'tcp.dstport'
+      ]
+      const proc = spawn(tshark, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+      let stdout = ''
+      let stderr = ''
+      proc.stdout.on('data', (b) => (stdout += b.toString('utf8')))
+      proc.stderr.on('data', (b) => (stderr += b.toString('utf8')))
+      proc.on('error', reject)
+      proc.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(stderr.trim() || `tshark endpoint scan failed (code=${code})`))
+          return
+        }
+        resolve(stdout)
+      })
+    })
+
+    for (const line of out.split(/\r?\n/)) {
+      if (!line.trim()) continue
+      const [streamStr, ip4src, ip6src, srcPortStr, ip4dst, ip6dst, dstPortStr] = line.split('\t')
+      const id = Number(streamStr)
+      if (!Number.isFinite(id)) continue
+      if (meta.has(id)) continue
+
+      const srcIp = (ip4src || ip6src || '').trim()
+      const dstIp = (ip4dst || ip6dst || '').trim()
+      const srcPort = Math.trunc(Number(srcPortStr))
+      const dstPort = Math.trunc(Number(dstPortStr))
+
+      const m: StreamMeta = {}
+      if (srcIp) m.src = { ip: srcIp, port: Number.isFinite(srcPort) ? srcPort : undefined }
+      if (dstIp) m.dst = { ip: dstIp, port: Number.isFinite(dstPort) ? dstPort : undefined }
+      meta.set(id, m)
+    }
+
+    return meta
+  }
+
+  const metaByStream = await loadStreamEndpoints().catch((e) => {
+    const msg = e instanceof Error ? e.message : String(e)
+    mainWindow?.webContents.send('tcpwatch:captureLog', { message: `Split metadata scan failed (continuing): ${msg}` })
+    return new Map<number, StreamMeta>()
+  })
+
+  const enableRdns = process.env.TCPWATCH_RDNS !== '0'
+  if (enableRdns) {
+    const ipSet = new Set<string>()
+    for (const m of metaByStream.values()) {
+      if (m.src?.ip) ipSet.add(m.src.ip)
+      if (m.dst?.ip) ipSet.add(m.dst.ip)
+    }
+
+    const ips = Array.from(ipSet)
+    const cache = new Map<string, string[]>()
+    await mapWithConcurrency(ips, 8, async (ip) => {
+      try {
+        const names = await withTimeout(dnsReverse(ip), 900, `reverse DNS for ${ip}`)
+        if (Array.isArray(names) && names.length) cache.set(ip, names)
+      } catch {
+        // best effort
+      }
+      return null
+    })
+
+    for (const m of metaByStream.values()) {
+      if (m.src?.ip && cache.has(m.src.ip)) m.src.hostnames = cache.get(m.src.ip)
+      if (m.dst?.ip && cache.has(m.dst.ip)) m.dst.hostnames = cache.get(m.dst.ip)
+    }
+  }
+
+    for (const m of metaByStream.values()) {
+      const left = formatEndpoint(m.src)
+      const right = formatEndpoint(m.dst)
+      if (left && right) m.description = `${left} → ${right}`
+    }
+
   const index: {
+    version: number
     captureFile: string
     splitDir: string
     createdAt: string
-    streams: Array<{ id: number; file: string }>
+    streams: Array<{
+      id: number
+      file: string
+      src?: StreamEndpoint
+      dst?: StreamEndpoint
+      description?: string
+    }>
   } = {
+    version: 2,
     captureFile,
     splitDir,
     createdAt: new Date().toISOString(),
@@ -299,7 +465,12 @@ async function splitCaptureByTcpStream(captureFile: string, dumpDir: string) {
       })
     })
 
-    index.streams.push({ id, file: fileName })
+    const m = metaByStream.get(id)
+    const left = formatEndpoint(m?.src)
+    const right = formatEndpoint(m?.dst)
+      const description = left && right ? `${left} → ${right}` : undefined
+
+    index.streams.push({ id, file: fileName, src: m?.src, dst: m?.dst, description })
     mainWindow?.webContents.send('tcpwatch:captureSplitProgress', {
       current: i + 1,
       total,
