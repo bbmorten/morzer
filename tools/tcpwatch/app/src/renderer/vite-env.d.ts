@@ -12,6 +12,7 @@ declare global {
       stopCapture: () => Promise<void>
       getCaptureStatus: () => Promise<import('./types').CaptureStatus>
       selectSplitFolder: () => Promise<string | null>
+      selectCaptureFile: () => Promise<string | null>
       readSplitIndex: (splitDir: string) => Promise<import('./types').SplitIndex>
       openInWireshark: (filePath: string) => Promise<void>
       stop: () => Promise<void>

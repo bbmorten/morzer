@@ -37,6 +37,8 @@ When you implement a change (code, packaging, workflow, docs):
 	- Split output `index.json` includes per-stream endpoints and best-effort reverse-DNS hostnames.
 		- Reverse DNS can be disabled with `TCPWATCH_RDNS=0`.
 		- Tuning: `TCPWATCH_RDNS_TIMEOUT_MS` and `TCPWATCH_RDNS_CONCURRENCY`.
+	- Captures UI can import external `.pcap/.pcapng` files by auto-splitting and generating `index.json`.
+		- Also supports drag & drop onto the Captures page.
 
 ## Release / packaging
 

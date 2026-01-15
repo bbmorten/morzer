@@ -179,6 +179,16 @@ th {
 
 .capPad12 { padding: 12px; }
 
+.capDropHint {
+  margin-top: 8px;
+  font-size: 11px;
+}
+
+.capDropActive {
+  outline: 2px dashed var(--accent);
+  outline-offset: 6px;
+}
+
 @media (max-width: 900px) {
   .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

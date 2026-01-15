@@ -108,7 +108,9 @@ Notes:
 ### Viewing split files
 
 - Open the **Captures** page in the app.
-- Select the split folder (or it will auto-select the most recent split from the last capture).
+- Select a split folder (or it will auto-select the most recent split from the last capture).
+- Or: click **Capture file…** and choose any `.pcap`/`.pcapng` file. If it doesn’t have a split `index.json`, the app will automatically split it and generate one.
+- You can also **drag & drop** a `.pcap`/`.pcapng` onto the Captures page to import it.
 - Use the **Search (Description)** box to find streams by IP address or hostname.
 - Double-click a stream row to open the `.pcapng` in **Wireshark**.
 

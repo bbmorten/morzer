@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import type { CaptureStatus, SplitIndex } from '../types'
 
 export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus | null }) {
@@ -6,11 +6,15 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
   const [index, setIndex] = useState<SplitIndex | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [descFilter, setDescFilter] = useState<string>('')
+  const [dragActive, setDragActive] = useState<boolean>(false)
+  const [loading, setLoading] = useState<boolean>(false)
 
   useEffect(() => {
     const fromStatus = captureStatus?.splitDir
-    if (fromStatus) setSplitDir(fromStatus)
-  }, [captureStatus?.splitDir])
+    // Avoid switching the selected path while splitting is still running.
+    // Otherwise we can attempt to load a split folder before index.json is written.
+    if (fromStatus && !captureStatus?.splitting) setSplitDir(fromStatus)
+  }, [captureStatus?.splitDir, captureStatus?.splitting])
 
   useEffect(() => {
     // Reset search when switching folders so the table doesn't appear "empty".
@@ -35,6 +39,11 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
 
   const canLoad = Boolean(window.tcpwatch && splitDir.trim())
 
+  function isPcapPath(p: string): boolean {
+    const lower = p.toLowerCase()
+    return lower.endsWith('.pcap') || lower.endsWith('.pcapng')
+  }
+
   const onPickSplitFolder = async () => {
     if (!window.tcpwatch) return
     setError(null)
@@ -42,9 +51,17 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
     if (picked) setSplitDir(picked)
   }
 
+  const onPickCaptureFile = async () => {
+    if (!window.tcpwatch) return
+    setError(null)
+    const picked = await window.tcpwatch.selectCaptureFile()
+    if (picked) setSplitDir(picked)
+  }
+
   const onLoad = async () => {
     if (!window.tcpwatch) return
     setError(null)
+    setLoading(true)
     try {
       const idx = await window.tcpwatch.readSplitIndex(splitDir.trim())
       setIndex(idx)
@@ -52,6 +69,8 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
       const msg = e instanceof Error ? e.message : String(e)
       setError(msg)
       setIndex(null)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -82,8 +101,42 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
     }
   }
 
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(true)
+  }
+
+  const onDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+  }
+
+  const onDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+    setError(null)
+
+    const f = e.dataTransfer?.files?.[0]
+    const p = f ? String((f as unknown as { path?: unknown }).path ?? '') : ''
+    const pickedPath = p.trim()
+    if (!pickedPath) {
+      setError('Drop a .pcap/.pcapng file from Finder.')
+      return
+    }
+    if (!isPcapPath(pickedPath)) {
+      setError('Unsupported file type. Drop a .pcap or .pcapng file.')
+      return
+    }
+
+    // This will auto-split and generate index.json via readSplitIndex.
+    setSplitDir(pickedPath)
+  }
+
   return (
-    <div className="panel">
+    <div className={dragActive ? 'panel capDropActive' : 'panel'} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
       <div className="controls">
         <div className="capGridAll">
           <div className="sub mb6">Split Captures</div>
@@ -91,18 +144,20 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
         </div>
 
         <div className="capGridSpan3">
-          <label>Split folder</label>
+          <label>Split folder / capture file</label>
           <div className="capRowFlex">
-            <button onClick={onPickSplitFolder}>Choose…</button>
+            <button onClick={onPickSplitFolder} title="Choose a tcpwatch-split-* folder">Split folder…</button>
+            <button onClick={onPickCaptureFile} title="Import a .pcap/.pcapng file (auto-split + index.json)">Capture file…</button>
             <div className="sub capEllipsis" title={splitDir || ''}>
               {splitDir ? splitDir : 'No folder selected'}
             </div>
           </div>
+          <div className="sub capDropHint">Tip: you can also drag & drop a .pcap/.pcapng file here.</div>
         </div>
 
         <div>
           <label>Index</label>
-          <button onClick={onLoad} disabled={!canLoad}>Load</button>
+          <button onClick={onLoad} disabled={!canLoad || loading}>{loading ? 'Loading…' : 'Load'}</button>
         </div>
 
         <div className="capGridSpan3">

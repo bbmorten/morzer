@@ -46,6 +46,215 @@ type CaptureStatus = {
 let captureChild: ChildProcess | null = null
 let captureStatus: CaptureStatus = { running: false }
 
+type StreamEndpoint = {
+  ip?: string
+  port?: number
+  hostnames?: string[]
+}
+
+type StreamMeta = {
+  src?: StreamEndpoint
+  dst?: StreamEndpoint
+  description?: string
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined
+  const timeout = new Promise<T>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+  })
+  return Promise.race([p, timeout]).finally(() => {
+    if (timer) clearTimeout(timer)
+  })
+}
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let nextIndex = 0
+
+  const workers = Array.from({ length: Math.max(1, limit) }, async () => {
+    while (true) {
+      const idx = nextIndex
+      nextIndex++
+      if (idx >= items.length) return
+      results[idx] = await fn(items[idx])
+    }
+  })
+
+  await Promise.all(workers)
+  return results
+}
+
+function pickBestHostname(names: string[] | undefined): string | undefined {
+  const n = (names ?? []).find((s) => s && s.trim())
+  return n ? n.trim() : undefined
+}
+
+function formatEndpoint(ep: StreamEndpoint | undefined): string {
+  if (!ep?.ip) return ''
+  const host = pickBestHostname(ep.hostnames)
+  const addr = host && host !== ep.ip ? `${host} (${ep.ip})` : ep.ip
+  const port = typeof ep.port === 'number' ? `:${ep.port}` : ''
+  return `${addr}${port}`
+}
+
+async function resolveHostnamesForStreamMeta(metaByStream: Map<number, StreamMeta>) {
+  const enableRdns = process.env.TCPWATCH_RDNS !== '0'
+  if (!enableRdns) return
+
+  const timeoutEnv = Number(process.env.TCPWATCH_RDNS_TIMEOUT_MS)
+  const rdnsTimeoutMs = Number.isFinite(timeoutEnv) ? Math.max(200, Math.min(10000, Math.trunc(timeoutEnv))) : 2000
+
+  const concEnv = Number(process.env.TCPWATCH_RDNS_CONCURRENCY)
+  const rdnsConcurrency = Number.isFinite(concEnv) ? Math.max(1, Math.min(32, Math.trunc(concEnv))) : 8
+
+  const ipSet = new Set<string>()
+  for (const m of metaByStream.values()) {
+    if (m.src?.ip) ipSet.add(m.src.ip)
+    if (m.dst?.ip) ipSet.add(m.dst.ip)
+  }
+
+  const ips = Array.from(ipSet)
+  const cache = new Map<string, string[]>()
+  await mapWithConcurrency(ips, rdnsConcurrency, async (ip) => {
+    try {
+      // 1) Try PTR (reverse DNS)
+      const names = await withTimeout(dnsReverse(ip), rdnsTimeoutMs, `reverse DNS for ${ip}`).catch(() => [])
+      if (Array.isArray(names) && names.length) {
+        cache.set(ip, names)
+        return null
+      }
+
+      // 2) Fallback: system resolver / getnameinfo (can use mDNS/Bonjour on macOS)
+      // Port is required by API; use 0 because we only care about the hostname.
+      const res = await withTimeout(dnsLookupService(ip, 0), rdnsTimeoutMs, `lookupService for ${ip}`).catch(() => null)
+      const host = res && typeof (res as { hostname?: unknown }).hostname === 'string' ? (res as { hostname: string }).hostname : ''
+      if (host && host.trim() && host.trim() !== ip) {
+        cache.set(ip, [host.trim()])
+      }
+    } catch {
+      // best effort
+    }
+    return null
+  })
+
+  for (const m of metaByStream.values()) {
+    if (m.src?.ip && cache.has(m.src.ip)) m.src.hostnames = cache.get(m.src.ip)
+    if (m.dst?.ip && cache.has(m.dst.ip)) m.dst.hostnames = cache.get(m.dst.ip)
+  }
+}
+
+async function buildSplitIndexFromStreamsDir(splitDir: string) {
+  const tshark = resolveTsharkPath()
+
+  const entries = fs.readdirSync(splitDir, { withFileTypes: true })
+  const streamFiles = entries
+    .filter((e) => e.isFile() && /^tcp-stream-\d{5}\.(pcap|pcapng)$/i.test(e.name))
+    .map((e) => e.name)
+
+  if (streamFiles.length === 0) throw new Error(`No tcp-stream-*.pcapng files found in ${splitDir}`)
+
+  const streams = streamFiles
+    .map((name) => {
+      const m = name.match(/^tcp-stream-(\d{5})\.(pcap|pcapng)$/i)
+      const id = m ? Number(m[1]) : NaN
+      return { id, file: name }
+    })
+    .filter((s) => Number.isFinite(s.id))
+    .sort((a, b) => a.id - b.id)
+
+  const metaByStream = new Map<number, StreamMeta>()
+
+  // Load endpoints by scanning the first TCP packet from each per-stream file.
+  await mapWithConcurrency(streams, 6, async (s) => {
+    const filePath = path.join(splitDir, s.file)
+    const out = await new Promise<string>((resolve, reject) => {
+      const args = [
+        '-r',
+        filePath,
+        '-Y',
+        'tcp',
+        '-c',
+        '1',
+        '-T',
+        'fields',
+        '-E',
+        'separator=\t',
+        '-E',
+        'occurrence=f',
+        '-e',
+        'ip.src',
+        '-e',
+        'ipv6.src',
+        '-e',
+        'tcp.srcport',
+        '-e',
+        'ip.dst',
+        '-e',
+        'ipv6.dst',
+        '-e',
+        'tcp.dstport'
+      ]
+      const proc = spawn(tshark, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+      let stdout = ''
+      let stderr = ''
+      proc.stdout.on('data', (b) => (stdout += b.toString('utf8')))
+      proc.stderr.on('data', (b) => (stderr += b.toString('utf8')))
+      proc.on('error', reject)
+      proc.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(stderr.trim() || `tshark endpoint scan failed for ${filePath} (code=${code})`))
+          return
+        }
+        resolve(stdout)
+      })
+    }).catch(() => '')
+
+    const line = out.trim().split(/\r?\n/).filter(Boolean)[0] ?? ''
+    if (!line) return null
+    const [ip4src, ip6src, srcPortStr, ip4dst, ip6dst, dstPortStr] = line.split('\t')
+    const srcIp = (ip4src || ip6src || '').trim()
+    const dstIp = (ip4dst || ip6dst || '').trim()
+    const srcPort = Math.trunc(Number(srcPortStr))
+    const dstPort = Math.trunc(Number(dstPortStr))
+
+    const m: StreamMeta = {}
+    if (srcIp) m.src = { ip: srcIp, port: Number.isFinite(srcPort) ? srcPort : undefined }
+    if (dstIp) m.dst = { ip: dstIp, port: Number.isFinite(dstPort) ? dstPort : undefined }
+    metaByStream.set(s.id, m)
+    return null
+  })
+
+  await resolveHostnamesForStreamMeta(metaByStream)
+
+  for (const m of metaByStream.values()) {
+    const left = formatEndpoint(m.src)
+    const right = formatEndpoint(m.dst)
+    if (left && right) m.description = `${left} → ${right}`
+  }
+
+  const index = {
+    version: 2,
+    captureFile: '(imported)',
+    splitDir,
+    createdAt: new Date().toISOString(),
+    streams: streams.map((s) => {
+      const m = metaByStream.get(s.id)
+      return {
+        id: s.id,
+        file: s.file,
+        src: m?.src,
+        dst: m?.dst,
+        description: m?.description
+      }
+    })
+  }
+
+  const indexPath = path.join(splitDir, 'index.json')
+  fs.writeFileSync(indexPath, JSON.stringify(index, null, 2), 'utf8')
+  return { index, indexPath }
+}
+
 function sendCaptureStatus(partial?: Partial<CaptureStatus>) {
   captureStatus = { ...captureStatus, ...(partial ?? {}) }
   mainWindow?.webContents.send('tcpwatch:captureStatus', captureStatus)
@@ -266,58 +475,6 @@ async function splitCaptureByTcpStream(captureFile: string, dumpDir: string) {
     })
   })
 
-  type StreamEndpoint = {
-    ip?: string
-    port?: number
-    hostnames?: string[]
-  }
-
-  type StreamMeta = {
-    src?: StreamEndpoint
-    dst?: StreamEndpoint
-    description?: string
-  }
-
-  function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-    let timer: NodeJS.Timeout | undefined
-    const timeout = new Promise<T>((_resolve, reject) => {
-      timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
-    })
-    return Promise.race([p, timeout]).finally(() => {
-      if (timer) clearTimeout(timer)
-    })
-  }
-
-  async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-    const results: R[] = new Array(items.length)
-    let nextIndex = 0
-
-    const workers = Array.from({ length: Math.max(1, limit) }, async () => {
-      while (true) {
-        const idx = nextIndex
-        nextIndex++
-        if (idx >= items.length) return
-        results[idx] = await fn(items[idx])
-      }
-    })
-
-    await Promise.all(workers)
-    return results
-  }
-
-  function pickBestHostname(names: string[] | undefined): string | undefined {
-    const n = (names ?? []).find((s) => s && s.trim())
-    return n ? n.trim() : undefined
-  }
-
-  function formatEndpoint(ep: StreamEndpoint | undefined): string {
-    if (!ep?.ip) return ''
-    const host = pickBestHostname(ep.hostnames)
-    const addr = host && host !== ep.ip ? `${host} (${ep.ip})` : ep.ip
-    const port = typeof ep.port === 'number' ? `:${ep.port}` : ''
-    return `${addr}${port}`
-  }
-
   async function loadStreamEndpoints(): Promise<Map<number, StreamMeta>> {
     // Get one packet row per stream-ish (we take the first we see for each stream).
     // Supports both IPv4 and IPv6 by probing ip.* and ipv6.* fields.
@@ -391,49 +548,7 @@ async function splitCaptureByTcpStream(captureFile: string, dumpDir: string) {
     return new Map<number, StreamMeta>()
   })
 
-  const enableRdns = process.env.TCPWATCH_RDNS !== '0'
-  if (enableRdns) {
-    const timeoutEnv = Number(process.env.TCPWATCH_RDNS_TIMEOUT_MS)
-    const rdnsTimeoutMs = Number.isFinite(timeoutEnv) ? Math.max(200, Math.min(10000, Math.trunc(timeoutEnv))) : 2000
-
-    const concEnv = Number(process.env.TCPWATCH_RDNS_CONCURRENCY)
-    const rdnsConcurrency = Number.isFinite(concEnv) ? Math.max(1, Math.min(32, Math.trunc(concEnv))) : 8
-
-    const ipSet = new Set<string>()
-    for (const m of metaByStream.values()) {
-      if (m.src?.ip) ipSet.add(m.src.ip)
-      if (m.dst?.ip) ipSet.add(m.dst.ip)
-    }
-
-    const ips = Array.from(ipSet)
-    const cache = new Map<string, string[]>()
-    await mapWithConcurrency(ips, rdnsConcurrency, async (ip) => {
-      try {
-        // 1) Try PTR (reverse DNS)
-        const names = await withTimeout(dnsReverse(ip), rdnsTimeoutMs, `reverse DNS for ${ip}`).catch(() => [])
-        if (Array.isArray(names) && names.length) {
-          cache.set(ip, names)
-          return null
-        }
-
-        // 2) Fallback: system resolver / getnameinfo (can use mDNS/Bonjour on macOS)
-        // Port is required by API; use 0 because we only care about the hostname.
-        const res = await withTimeout(dnsLookupService(ip, 0), rdnsTimeoutMs, `lookupService for ${ip}`).catch(() => null)
-        const host = res && typeof (res as { hostname?: unknown }).hostname === 'string' ? (res as { hostname: string }).hostname : ''
-        if (host && host.trim() && host.trim() !== ip) {
-          cache.set(ip, [host.trim()])
-        }
-      } catch {
-        // best effort
-      }
-      return null
-    })
-
-    for (const m of metaByStream.values()) {
-      if (m.src?.ip && cache.has(m.src.ip)) m.src.hostnames = cache.get(m.src.ip)
-      if (m.dst?.ip && cache.has(m.dst.ip)) m.dst.hostnames = cache.get(m.dst.ip)
-    }
-  }
+  await resolveHostnamesForStreamMeta(metaByStream)
 
     for (const m of metaByStream.values()) {
       const left = formatEndpoint(m.src)
@@ -500,6 +615,24 @@ async function splitCaptureByTcpStream(captureFile: string, dumpDir: string) {
   fs.writeFileSync(path.join(splitDir, 'index.json'), JSON.stringify(index, null, 2), 'utf8')
   mainWindow?.webContents.send('tcpwatch:captureSplitDone', { splitDir, totalStreams: total })
   sendCaptureStatus({ splitting: false })
+
+  return { splitDir, indexPath: path.join(splitDir, 'index.json') }
+}
+
+function isPcapFile(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase()
+  return ext === '.pcap' || ext === '.pcapng'
+}
+
+function isLikelySplitFolder(dirPath: string): boolean {
+  try {
+    const base = path.basename(dirPath)
+    if (!base.startsWith('tcpwatch-split-')) return false
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true })
+    return entries.some((e) => e.isFile() && /^tcp-stream-\d{5}\.(pcap|pcapng)$/i.test(e.name))
+  } catch {
+    return false
+  }
 }
 
 function stopChild() {
@@ -754,39 +887,117 @@ app.whenReady().then(() => {
     return p ?? null
   })
 
+  ipcMain.handle('tcpwatch:selectCaptureFile', async () => {
+    const res = await dialog.showOpenDialog({
+      title: 'Choose a capture file (.pcap/.pcapng)',
+      properties: ['openFile'],
+      filters: [{ name: 'PCAP', extensions: ['pcap', 'pcapng'] }]
+    })
+    if (res.canceled) return null
+    const p = res.filePaths?.[0]
+    return p ?? null
+  })
+
   ipcMain.handle('tcpwatch:readSplitIndex', async (_evt, splitDir: unknown) => {
-    const dir = String(splitDir ?? '').trim()
-    if (!dir) throw new Error('Split folder is required')
+    const input = String(splitDir ?? '').trim()
+    if (!input) throw new Error('Split folder or capture file is required')
+
+    if (!fs.existsSync(input)) throw new Error(`Path not found: ${input}`)
+
+    const st = fs.statSync(input)
+
+    // If user selected a capture file, auto-split it and return the generated index.
+    if (st.isFile() && isPcapFile(input)) {
+      const dumpDir = path.dirname(input)
+      const res = await splitCaptureByTcpStream(input, dumpDir)
+      const raw = fs.readFileSync(res.indexPath, 'utf8')
+      return JSON.parse(raw) as unknown
+    }
+
+    // Directory: either contains index.json, is a split folder missing index.json, or is a dump root.
+    const dir = st.isDirectory() ? input : path.dirname(input)
 
     const directIndex = path.join(dir, 'index.json')
     let indexPath = directIndex
 
     if (!fs.existsSync(indexPath)) {
-      // If user picked the dump root, try to find the most recent split folder.
+      const sameSplitDir =
+        captureStatus.splitting &&
+        typeof captureStatus.splitDir === 'string' &&
+        path.resolve(captureStatus.splitDir) === path.resolve(dir)
+      if (sameSplitDir) {
+        throw new Error(`Split is still in progress for ${dir}. Please wait for splitting to finish and try again.`)
+      }
+    }
+
+    if (!fs.existsSync(indexPath) && isLikelySplitFolder(dir)) {
+      // Regenerate missing index.json from tcp-stream-* files.
+      mainWindow?.webContents.send('tcpwatch:captureLog', { message: `index.json missing; rebuilding from stream files in ${dir}` })
+      await buildSplitIndexFromStreamsDir(dir)
+      indexPath = path.join(dir, 'index.json')
+    }
+
+    if (!fs.existsSync(indexPath)) {
+      // 1) If user picked the dump root, try to find the most recent split folder.
       try {
         const entries = fs.readdirSync(dir, { withFileTypes: true })
-        const candidates = entries
+        const splitCandidates = entries
           .filter((e) => e.isDirectory() && e.name.startsWith('tcpwatch-split-'))
           .map((e) => {
             const splitFolder = path.join(dir, e.name)
-            const idx = path.join(splitFolder, 'index.json')
-            if (!fs.existsSync(idx)) return null
             const st = fs.statSync(splitFolder)
-            return { idx, mtimeMs: st.mtimeMs }
+            return { splitFolder, mtimeMs: st.mtimeMs }
           })
-          .filter(Boolean) as Array<{ idx: string; mtimeMs: number }>
 
-        candidates.sort((a, b) => b.mtimeMs - a.mtimeMs)
-        if (candidates[0]) indexPath = candidates[0].idx
+        splitCandidates.sort((a, b) => b.mtimeMs - a.mtimeMs)
+
+        for (const cand of splitCandidates) {
+          const idx = path.join(cand.splitFolder, 'index.json')
+          if (fs.existsSync(idx)) {
+            indexPath = idx
+            break
+          }
+          if (isLikelySplitFolder(cand.splitFolder)) {
+            mainWindow?.webContents.send('tcpwatch:captureLog', {
+              message: `index.json missing; rebuilding from stream files in ${cand.splitFolder}`
+            })
+            await buildSplitIndexFromStreamsDir(cand.splitFolder)
+            const rebuilt = path.join(cand.splitFolder, 'index.json')
+            if (fs.existsSync(rebuilt)) {
+              indexPath = rebuilt
+              break
+            }
+          }
+        }
       } catch {
         // ignore
       }
     }
 
-    if (!fs.existsSync(indexPath)) throw new Error(`index.json not found in ${dir}`)
+    if (!fs.existsSync(indexPath)) {
+      // 2) If this folder has capture files but no index, pick the newest capture and split it.
+      try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true })
+        const captures = entries
+          .filter((e) => e.isFile() && isPcapFile(e.name))
+          .map((e) => {
+            const p = path.join(dir, e.name)
+            const st = fs.statSync(p)
+            return { p, mtimeMs: st.mtimeMs }
+          })
+        captures.sort((a, b) => b.mtimeMs - a.mtimeMs)
+        if (captures[0]) {
+          const res = await splitCaptureByTcpStream(captures[0].p, dir)
+          indexPath = res.indexPath
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (!fs.existsSync(indexPath)) throw new Error(`index.json not found (and no capture file to import) in ${dir}`)
     const raw = fs.readFileSync(indexPath, 'utf8')
-    const parsed = JSON.parse(raw) as unknown
-    return parsed
+    return JSON.parse(raw) as unknown
   })
 
   ipcMain.handle('tcpwatch:openInWireshark', async (_evt, filePath: unknown) => {

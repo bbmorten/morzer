@@ -66,3 +66,5 @@ export type SplitIndex = {
     description?: string
   }>
 }
+
+// Renderer API surface is declared in src/renderer/vite-env.d.ts.

@@ -21,6 +21,8 @@ If macOS blocks the app (unsigned builds), use Finder → right‑click `tcpwatc
 - Use **Capture (tshark)** to record traffic and split by connection; if **Port** is set, the capture is limited to `tcp port <port>`.
 - In **Captures**, each stream includes a human-friendly description (endpoints + best-effort reverse DNS).
 - In **Captures**, use **Search (Description)** to find streams by IP or FQDN.
+- You can also import any `.pcap`/`.pcapng` file from **Captures** (auto-split + generate `index.json`).
+- You can drag & drop a `.pcap`/`.pcapng` onto the Captures page to import.
 
 Reverse lookups are best-effort (DNS/mDNS dependent). You can disable them with `TCPWATCH_RDNS=0`.
 
