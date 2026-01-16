@@ -117,6 +117,23 @@ Notes:
 
 The Captures table shows a **Description** column (derived from the stream endpoints and reverse-DNS hostnames when available).
 
+### Expert Information
+
+The **Expert Information** view is modeled after Wireshark’s *Analyze → Expert Information* feature.
+
+What you get:
+
+- A per-packet table of expert messages (one row per expert item), including:
+  - **Severity**: keyword aliases like `chat`, `note`, `warn`, `error`
+  - **Group**: keyword aliases like `sequence`, `protocol`, `checksum`, `reassemble`, `malformed`, etc.
+- A collapsible **Summary** section which is the raw output of `tshark -z expert`.
+
+Notes:
+
+- Expert Information is a starting point, not proof of a problem.
+- Some streams have no expert items; the table may be empty.
+- This analysis invokes `tshark` and may take a moment on large stream files.
+
 ## Filters
 
 All filters are optional.
