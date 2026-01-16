@@ -19,9 +19,11 @@ If macOS blocks the app (unsigned builds), use Finder → right‑click `tcpwatc
 - Click **Start** to stream updates; change filters while running to apply instantly.
 - Double‑click a row to terminate that row’s PID (after confirmation).
 - Use **Capture (tshark)** to record traffic and split by connection; if **Port** is set, the capture is limited to `tcp port <port>`.
+- Snaplen: stream files are truncated to **200 bytes/packet** by default when splitting; set **0** to disable truncation.
 - In **Captures**, each stream includes a human-friendly description (endpoints + best-effort reverse DNS).
 - In **Captures**, use **Search (Description)** to find streams by IP or FQDN.
 - In **Captures**, right-click a stream row and choose **Expert Information** to see Wireshark-style per-packet expert messages for that connection (severity + group keyword aliases) plus a summary (`tshark -z expert`).
+- In **Captures**, right-click a stream row and choose **Analyze** to run the `.github/prompts/packet-analysis.md` workflow (Claude + `mcpcap` MCP tools) and show a Markdown report on a dedicated page.
 - You can also import any `.pcap`/`.pcapng` file from **Captures** (auto-split + generate `index.json`).
 - You can drag & drop a `.pcap`/`.pcapng` onto the Captures page to import.
 
@@ -33,7 +35,8 @@ For details (filters, troubleshooting, permissions), see `USER_GUIDE.md`.
 
 - Node.js + npm
 - A built `tcpwatch` binary at `tools/tcpwatch/tcpwatch`
-- Wireshark installed (provides `tshark`) for capture/splitting and Expert Information analysis
+- Wireshark installed (provides `tshark` and `editcap`) for capture/splitting, snaplen truncation, and Expert Information analysis
+- For **Analyze**: an Anthropic API key (`ANTHROPIC_API_KEY`) and `mcpcap` available via `.mcp.json` (or `TCPWATCH_MCPCAP_BIN` override). See `.env.example`.
 
 Build the binary:
 

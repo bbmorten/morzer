@@ -37,6 +37,7 @@ export type CaptureStatus = {
   durationSeconds?: number
   splitting?: boolean
   splitDir?: string
+  snapLen?: number
 }
 
 export type CaptureStartOptions = {
@@ -44,6 +45,7 @@ export type CaptureStartOptions = {
   ifaceId: string
   durationSeconds: number
   port?: number
+  snapLen?: number
 }
 
 export type CaptureSplitProgress = {
@@ -83,6 +85,13 @@ export type ExpertInfoResult = {
   countsBySeverity: Record<string, number>
   summaryText?: string
   items: ExpertInfoItem[]
+}
+
+export type PacketAnalysisResult = {
+  filePath: string
+  generatedAt: string
+  model?: string
+  text: string
 }
 
 // Renderer API surface is declared in src/renderer/vite-env.d.ts.

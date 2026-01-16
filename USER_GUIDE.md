@@ -82,6 +82,7 @@ The app can start a short packet capture using `tshark` (from Wireshark) and the
    - Choose a **Dump folder**
    - Pick an **Interface**
    - Set **Max duration** (1–300 seconds)
+  - Set **Snaplen (bytes)** (default **200**; set **0** to disable truncation)
   - Optional: set the **Port** filter (under Filters) to scope capture to a single port.
 3. Click **Start capture**.
 4. Click **Stop capture** to stop early (otherwise it stops automatically at the max duration).
@@ -109,11 +110,12 @@ Notes:
 
 - Open the **Captures** page in the app.
 - Select a split folder (or it will auto-select the most recent split from the last capture).
-- Or: click **Capture file…** and choose any `.pcap`/`.pcapng` file. If it doesn’t have a split `index.json`, the app will automatically split it and generate one.
+- Or: click **Capture file…** and choose any `.pcap`/`.pcapng` file. If it doesn’t have a split `index.json`, the app will automatically split it and generate one (using the current **Snaplen (bytes)** setting).
 - You can also **drag & drop** a `.pcap`/`.pcapng` onto the Captures page to import it.
 - Use the **Search (Description)** box to find streams by IP address or hostname.
 - Double-click a stream row to open the `.pcapng` in **Wireshark**.
 - Right-click a stream row to open the analysis menu, then choose **Expert Information** to view Wireshark-style per-packet expert messages for that connection.
+- Right-click a stream row and choose **Analyze** to run an AI-assisted capture analysis (Claude + `mcpcap` MCP tools) and open the report on a dedicated page.
 
 The Captures table shows a **Description** column (derived from the stream endpoints and reverse-DNS hostnames when available).
 
@@ -133,6 +135,25 @@ Notes:
 - Expert Information is a starting point, not proof of a problem.
 - Some streams have no expert items; the table may be empty.
 - This analysis invokes `tshark` and may take a moment on large stream files.
+
+### Analyze (Claude + mcpcap)
+
+The **Analyze** view runs the prompt in `.github/prompts/packet-analysis.md` and uses the `mcpcap` MCP server to extract structured information from the capture.
+
+The report is rendered as Markdown (tables, code blocks, etc.).
+
+Prerequisites:
+
+- A configured `mcpcap` MCP server (typically via the repo’s `.mcp.json`, or by setting `TCPWATCH_MCPCAP_BIN`).
+- An Anthropic API key in a local `.env` file at the repo root:
+
+  - Copy `.env.example` → `.env`
+  - Set `ANTHROPIC_API_KEY=...`
+
+Notes:
+
+- The analysis runs locally in the Electron main process and may take a while on large files.
+- If the API key is missing, you’ll see an error explaining how to set it.
 
 ## Filters
 

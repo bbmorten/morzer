@@ -2,12 +2,19 @@ import { useEffect, useMemo, useState } from 'react'
 import type { CaptureInterface, CaptureSplitProgress, CaptureStatus, Row, Snapshot, StartOptions } from './types'
 import { ConnectionsTable } from './components/ConnectionsTable'
 import { CapturesPage } from './components/CapturesPage'
+import { PacketAnalysisPage } from './components/PacketAnalysisPage'
+import type { PacketAnalysisResult } from './types'
 
 export function App() {
-  const [page, setPage] = useState<'connections' | 'captures'>('connections')
+  const [page, setPage] = useState<'connections' | 'captures' | 'analysis'>('connections')
   const [running, setRunning] = useState(false)
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [lastError, setLastError] = useState<string | null>(null)
+
+  const [analysisFilePath, setAnalysisFilePath] = useState<string>('')
+  const [analysisLoading, setAnalysisLoading] = useState<boolean>(false)
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
+  const [analysisResult, setAnalysisResult] = useState<PacketAnalysisResult | null>(null)
 
   const [intervalMs, setIntervalMs] = useState(500)
   const [stateCsv, setStateCsv] = useState('')
@@ -20,8 +27,15 @@ export function App() {
   const [captureIfaces, setCaptureIfaces] = useState<CaptureInterface[]>([])
   const [captureIfaceId, setCaptureIfaceId] = useState<string>('')
   const [captureDurationSec, setCaptureDurationSec] = useState<number>(300)
+  const [captureSnapLen, setCaptureSnapLen] = useState<number>(200)
   const [captureStatus, setCaptureStatus] = useState<CaptureStatus | null>(null)
   const [splitProgress, setSplitProgress] = useState<CaptureSplitProgress | null>(null)
+
+  const effectiveSnapLen = useMemo(() => {
+    const n = Math.trunc(Number(captureSnapLen))
+    if (!Number.isFinite(n)) return 200
+    return Math.max(0, Math.min(262144, n))
+  }, [captureSnapLen])
 
   useEffect(() => {
     if (!window.tcpwatch) {
@@ -140,7 +154,8 @@ export function App() {
       dumpDir: dumpDir.trim(),
       ifaceId: captureIfaceId,
       durationSeconds: duration,
-      port: typeof startOptions.port === 'number' && Number.isFinite(startOptions.port) ? startOptions.port : undefined
+      port: typeof startOptions.port === 'number' && Number.isFinite(startOptions.port) ? startOptions.port : undefined,
+      snapLen: effectiveSnapLen
     })
     setCaptureStatus(status)
   }
@@ -183,6 +198,25 @@ export function App() {
   const title = snapshot?.title || 'tcpwatch'
   const rows = snapshot?.rows ?? []
 
+  const runAnalysis = async (filePath: string) => {
+    if (!window.tcpwatch) return
+    const p = filePath.trim()
+    if (!p) return
+    setAnalysisFilePath(p)
+    setAnalysisLoading(true)
+    setAnalysisError(null)
+    setAnalysisResult(null)
+    try {
+      const res = await window.tcpwatch.analyzeCapture(p)
+      setAnalysisResult(res)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setAnalysisError(msg)
+    } finally {
+      setAnalysisLoading(false)
+    }
+  }
+
   return (
     <div className="container">
       <div className="header">
@@ -191,7 +225,7 @@ export function App() {
           <div className="sub">Updated: {updatedLabel} • Rows: {rows.length}</div>
           {lastError ? <div className="sub errorText">{lastError}</div> : null}
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div className="headerActions">
           <button
             className={page === 'connections' ? 'primary' : undefined}
             onClick={() => setPage('connections')}
@@ -210,8 +244,22 @@ export function App() {
         </div>
       </div>
 
-      {page === 'captures' ? (
-        <CapturesPage captureStatus={captureStatus} />
+      {page === 'analysis' ? (
+        <PacketAnalysisPage
+          result={analysisResult ?? (analysisFilePath ? { filePath: analysisFilePath, generatedAt: '', text: '' } : null)}
+          loading={analysisLoading}
+          error={analysisError}
+          onBack={() => setPage('captures')}
+          onRerun={() => runAnalysis(analysisFilePath)}
+        />
+      ) : page === 'captures' ? (
+        <CapturesPage
+          captureStatus={captureStatus}
+          onAnalyze={(filePath) => {
+            setPage('analysis')
+            runAnalysis(filePath)
+          }}
+        />
       ) : (
       <div className="panel">
         <div className="controls">
@@ -297,22 +345,27 @@ export function App() {
           </div>
         </div>
 
-        <div className="controls" style={{ marginTop: 12 }}>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <div className="sub" style={{ marginBottom: 6 }}>Capture (tshark)</div>
+        <div className="controls mt12">
+          <div className="capGridAll">
+            <div className="sub mb6">Capture (tshark)</div>
           </div>
-          <div style={{ gridColumn: '1 / span 3' }}>
+          <div className="capGridSpan3">
             <label>Dump folder</label>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div className="capRowFlex">
               <button onClick={onPickDumpFolder}>Choose…</button>
-              <div className="sub" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={dumpDir || ''}>
+              <div className="sub capEllipsis" title={dumpDir || ''}>
                 {dumpDir ? dumpDir : 'No folder selected'}
               </div>
             </div>
           </div>
           <div>
-            <label>Interface</label>
-            <select value={captureIfaceId} onChange={(e) => setCaptureIfaceId(e.target.value)}>
+            <label htmlFor="captureIface">Interface</label>
+            <select
+              id="captureIface"
+              value={captureIfaceId}
+              onChange={(e) => setCaptureIfaceId(e.target.value)}
+              title="Capture interface"
+            >
               {captureIfaces.map((i) => (
                 <option key={i.id} value={i.id}>
                   {i.id}. {i.name}{i.description ? ` (${i.description})` : ''}
@@ -321,14 +374,29 @@ export function App() {
             </select>
           </div>
           <div>
-            <label>Max duration (sec)</label>
+            <label htmlFor="captureDurationSec">Max duration (sec)</label>
             <input
+              id="captureDurationSec"
               type="number"
               min={1}
               max={300}
               step={1}
               value={captureDurationSec}
               onChange={(e) => setCaptureDurationSec(Number(e.target.value))}
+              title="Max capture duration in seconds"
+            />
+          </div>
+          <div>
+            <label htmlFor="captureSnapLen">Snaplen (bytes)</label>
+            <input
+              id="captureSnapLen"
+              type="number"
+              min={0}
+              max={262144}
+              step={1}
+              value={captureSnapLen}
+              onChange={(e) => setCaptureSnapLen(Number(e.target.value))}
+              title="Max bytes per packet written to each split tcp-stream-*.pcapng (0 disables truncation). Default 200."
             />
           </div>
           <div>
@@ -356,23 +424,23 @@ export function App() {
           </div>
 
           {captureStatus?.filePath ? (
-            <div style={{ gridColumn: '1 / -1' }}>
+            <div className="capGridAll">
               <div className="sub">Capture file: {captureStatus.filePath}</div>
             </div>
           ) : null}
           {captureStatus?.splitDir ? (
-            <div style={{ gridColumn: '1 / -1' }}>
+            <div className="capGridAll">
               <div className="sub">Split output: {captureStatus.splitDir}</div>
             </div>
           ) : null}
           {splitProgress ? (
-            <div style={{ gridColumn: '1 / -1' }}>
+            <div className="capGridAll">
               <div className="sub">
                 Splitting… {splitProgress.current}/{splitProgress.total} (tcp.stream={splitProgress.streamId}) → {splitProgress.file}
               </div>
             </div>
           ) : null}
-          <div style={{ gridColumn: '1 / -1' }}>
+          <div className="capGridAll">
             <div className="sub">Requires Wireshark/tshark installed. Capture may require elevated permissions.</div>
           </div>
         </div>

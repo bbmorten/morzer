@@ -34,6 +34,12 @@ body {
   margin-bottom: 12px;
 }
 
+.headerActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .h1 {
   font-size: 18px;
   margin: 0;
@@ -159,6 +165,7 @@ th {
 }
 
 .mb6 { margin-bottom: 6px; }
+.mt12 { margin-top: 12px; }
 
 /* Captures page helpers (avoid inline styles) */
 .capGridAll { grid-column: 1 / -1; }
@@ -206,6 +213,8 @@ th {
 
 .capCtxMenu {
   position: fixed;
+  left: 0;
+  top: 0;
   min-width: 220px;
   background: #0d1218;
   border: 1px solid var(--border);
@@ -213,6 +222,8 @@ th {
   padding: 6px;
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
 }
+
+.capMinWidth0 { min-width: 0; }
 
 .capCtxItem {
   width: 100%;
@@ -299,6 +310,100 @@ th {
   overflow: auto;
   font-size: 11px;
   line-height: 1.35;
+  color: var(--text);
+}
+
+.capAnalysisWrap {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #0b0f14;
+  overflow: auto;
+}
+
+.capAnalysisMarkdown {
+  padding: 12px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.capAnalysisMarkdown > :first-child { margin-top: 0; }
+.capAnalysisMarkdown > :last-child { margin-bottom: 0; }
+
+.capAnalysisMarkdown h1,
+.capAnalysisMarkdown h2,
+.capAnalysisMarkdown h3 {
+  margin: 14px 0 8px;
+  font-weight: 650;
+}
+
+.capAnalysisMarkdown h1 { font-size: 16px; }
+.capAnalysisMarkdown h2 { font-size: 14px; }
+.capAnalysisMarkdown h3 { font-size: 13px; }
+
+.capAnalysisMarkdown p,
+.capAnalysisMarkdown ul,
+.capAnalysisMarkdown ol {
+  margin: 8px 0;
+}
+
+.capAnalysisMarkdown a {
+  color: color-mix(in srgb, var(--accent), #ffffff 10%);
+}
+
+.capAnalysisMarkdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 11px;
+  background: color-mix(in srgb, var(--panel), transparent 10%);
+  border: 1px solid color-mix(in srgb, var(--border), transparent 25%);
+  padding: 1px 4px;
+  border-radius: 6px;
+}
+
+.capAnalysisMarkdown pre {
+  margin: 10px 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border), transparent 25%);
+  background: #0b0f14;
+}
+
+.capAnalysisMarkdown pre code {
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+
+.capAnalysisMarkdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+}
+
+.capAnalysisMarkdown th,
+.capAnalysisMarkdown td {
+  padding: 8px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border), transparent 35%);
+  vertical-align: top;
+}
+
+.capAnalysisMarkdown th {
+  position: sticky;
+  top: 0;
+  background: #0d1218;
+  text-align: left;
+  color: var(--muted);
+}
+
+.capAnalysisPre {
+  margin: 0;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.45;
   color: var(--text);
 }
 

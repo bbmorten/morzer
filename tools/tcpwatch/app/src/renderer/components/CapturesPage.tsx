@@ -1,19 +1,28 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import type { CaptureStatus, ExpertInfoResult, SplitIndex } from '../types'
 
-export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus | null }) {
+export function CapturesPage({
+  captureStatus,
+  onAnalyze,
+}: {
+  captureStatus: CaptureStatus | null
+  onAnalyze?: (filePath: string) => void
+}) {
   const [splitDir, setSplitDir] = useState<string>('')
   const [index, setIndex] = useState<SplitIndex | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [descFilter, setDescFilter] = useState<string>('')
   const [dragActive, setDragActive] = useState<boolean>(false)
   const [loading, setLoading] = useState<boolean>(false)
+  const [importSnapLenText, setImportSnapLenText] = useState<string>('200')
 
   const [ctxMenu, setCtxMenu] = useState<{
     x: number
     y: number
     stream: SplitIndex['streams'][number]
   } | null>(null)
+
+  const ctxMenuRef = useRef<HTMLDivElement | null>(null)
 
   const [expertOpen, setExpertOpen] = useState<boolean>(false)
   const [expertLoading, setExpertLoading] = useState<boolean>(false)
@@ -76,7 +85,18 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
     setError(null)
     setLoading(true)
     try {
-      const idx = await window.tcpwatch.readSplitIndex(splitDir.trim())
+      const pickedPath = splitDir.trim()
+      const rawImportSnapLen = Number(importSnapLenText)
+      const importSnapLen = Number.isFinite(rawImportSnapLen) ? rawImportSnapLen : undefined
+
+      const idx = await window.tcpwatch.readSplitIndex(
+        pickedPath,
+        isPcapPath(pickedPath)
+          ? {
+              snapLen: importSnapLen,
+            }
+          : undefined
+      )
       setIndex(idx)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -151,6 +171,19 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
     }
   }
 
+  const runAnalyze = (stream: SplitIndex['streams'][number]) => {
+    if (!index) return
+    closeCtxMenu()
+    const filePath = `${index.splitDir}/${stream.file}`
+    onAnalyze?.(filePath)
+  }
+
+  useEffect(() => {
+    if (!ctxMenuRef.current || !ctxMenu) return
+    ctxMenuRef.current.style.left = `${ctxMenu.x}px`
+    ctxMenuRef.current.style.top = `${ctxMenu.y}px`
+  }, [ctxMenu])
+
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
       if (ev.key === 'Escape') {
@@ -214,6 +247,19 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
             </div>
           </div>
           <div className="sub capDropHint">Tip: you can also drag & drop a .pcap/.pcapng file here.</div>
+        </div>
+
+        <div>
+          <label>Snaplen (bytes)</label>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={importSnapLenText}
+            onChange={(e) => setImportSnapLenText(e.target.value)}
+            title="Applies when importing/splitting capture files (.pcap/.pcapng). 0 disables truncation."
+          />
+          <div className="sub">Default 200; set 0 to disable truncation.</div>
         </div>
 
         <div>
@@ -299,11 +345,14 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
         <div className="capCtxBackdrop" onMouseDown={closeCtxMenu} onContextMenu={(e) => e.preventDefault()}>
           <div
             className="capCtxMenu"
-            style={{ left: ctxMenu.x, top: ctxMenu.y }}
+            ref={ctxMenuRef}
             onMouseDown={(e) => e.stopPropagation()}
           >
             <button className="capCtxItem" onClick={() => runExpertInfo(ctxMenu.stream)}>
               Expert Information
+            </button>
+            <button className="capCtxItem" onClick={() => runAnalyze(ctxMenu.stream)}>
+              Analyze
             </button>
           </div>
         </div>
@@ -313,7 +362,7 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
         <div className="capModalBackdrop" onMouseDown={closeExpert}>
           <div className="capModal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="capModalHeader">
-              <div style={{ minWidth: 0 }}>
+              <div className="capMinWidth0">
                 <div className="capModalTitle">Expert Information</div>
                 <div className="sub capEllipsis" title={expertResult?.filePath || ''}>
                   {expertResult?.filePath || (index ? `${index.splitDir}/…` : '')}
@@ -336,8 +385,13 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
 
                 <div className="capModalControls">
                   <div>
-                    <label>Severity</label>
-                    <select value={expertSeverity} onChange={(e) => setExpertSeverity(e.target.value)}>
+                    <label htmlFor="expertSeverity">Severity</label>
+                    <select
+                      id="expertSeverity"
+                      value={expertSeverity}
+                      onChange={(e) => setExpertSeverity(e.target.value)}
+                      title="Filter by expert severity"
+                    >
                       <option value="">All</option>
                       {Object.keys(expertResult.countsBySeverity)
                         .sort((a, b) => a.localeCompare(b))
@@ -349,8 +403,9 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
                     </select>
                   </div>
                   <div className="capGridSpan3">
-                    <label>Search (message)</label>
+                    <label htmlFor="expertQuery">Search (message)</label>
                     <input
+                      id="expertQuery"
                       type="text"
                       placeholder="e.g. retransmission, checksum, out-of-order"
                       value={expertQuery}

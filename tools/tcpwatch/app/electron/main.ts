@@ -4,6 +4,9 @@ import fs from 'node:fs'
 import { spawn, spawnSync, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import readline from 'node:readline'
 import { reverse as dnsReverse, lookupService as dnsLookupService } from 'node:dns/promises'
+import dotenv from 'dotenv'
+import { Client as McpClient } from '@modelcontextprotocol/sdk/client'
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 
 type StartOptions = {
   intervalMs: number
@@ -41,6 +44,7 @@ type CaptureStatus = {
   port?: number
   splitting?: boolean
   splitDir?: string
+  snapLen?: number
 }
 
 let captureChild: ChildProcess | null = null
@@ -327,6 +331,339 @@ function findUp(startDir: string, relPath: string): string | null {
   }
 }
 
+function resolveRepoRoot(): string {
+  const appPath = app.getAppPath()
+  const mcpPath = findUp(appPath, '.mcp.json')
+  if (mcpPath) return path.dirname(mcpPath)
+  const gitPath = findUp(appPath, '.git')
+  if (gitPath) return path.dirname(gitPath)
+  return appPath
+}
+
+let envLoaded = false
+function loadRepoEnvOnce() {
+  if (envLoaded) return
+  envLoaded = true
+
+  const repoRoot = resolveRepoRoot()
+  const envPath = path.join(repoRoot, '.env')
+  if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath })
+  }
+}
+
+type PacketAnalysisResult = {
+  filePath: string
+  generatedAt: string
+  model?: string
+  text: string
+}
+
+type McpServerConfig = { command: string; args?: string[] }
+
+function resolveMcpcapServerConfig(): McpServerConfig {
+  const envBin = process.env.TCPWATCH_MCPCAP_BIN || process.env.MCPCAP_BIN
+  if (envBin && fs.existsSync(envBin)) return { command: envBin, args: [] }
+
+  const repoRoot = resolveRepoRoot()
+  const cfgPath = path.join(repoRoot, '.mcp.json')
+  if (!fs.existsSync(cfgPath)) {
+    throw new Error('mcpcap MCP server not configured. Expected .mcp.json at repo root or set TCPWATCH_MCPCAP_BIN=/abs/path/to/mcpcap')
+  }
+  const raw = fs.readFileSync(cfgPath, 'utf8')
+  const parsed = JSON.parse(raw) as any
+  const server = parsed?.mcpServers?.mcpcap
+  const command = String(server?.command ?? '').trim()
+  if (!command) throw new Error('Invalid .mcp.json: missing mcpServers.mcpcap.command')
+  const args = Array.isArray(server?.args) ? server.args.map((x: any) => String(x)) : []
+  return { command, args }
+}
+
+function resolvePacketAnalysisPrompt(): string {
+  const repoRoot = resolveRepoRoot()
+  const promptPath = path.join(repoRoot, '.github', 'prompts', 'packet-analysis.md')
+  if (!fs.existsSync(promptPath)) throw new Error(`Prompt not found: ${promptPath}`)
+  return fs.readFileSync(promptPath, 'utf8')
+}
+
+type AnthropicTool = {
+  name: string
+  description?: string
+  input_schema: any
+}
+
+type AnthropicMessage = {
+  role: 'user' | 'assistant'
+  content: any[]
+}
+
+function getAnthropicApiKey(): string {
+  const key = String(process.env.ANTHROPIC_API_KEY ?? '').trim()
+  if (!key) throw new Error('Missing ANTHROPIC_API_KEY. Create a .env at repo root with ANTHROPIC_API_KEY=...')
+  return key
+}
+
+type AnthropicModelInfo = { id: string; display_name?: string }
+
+let cachedAutoModel: string | null = null
+
+function getConfiguredAnthropicModel(): string | null {
+  const m = String(process.env.TCPWATCH_CLAUDE_MODEL ?? process.env.ANTHROPIC_MODEL ?? '').trim()
+  return m || null
+}
+
+function pickBestModel(models: AnthropicModelInfo[]): string {
+  const ids = (models ?? []).map((m) => String(m.id)).filter(Boolean)
+  const preferPrefixes = [
+    'claude-opus-4-5-',
+    'claude-sonnet-4-5-',
+    'claude-opus-4-1-',
+    'claude-opus-4-',
+    'claude-sonnet-4-',
+    'claude-haiku-4-5-'
+  ]
+
+  for (const p of preferPrefixes) {
+    const found = ids.find((id) => id.startsWith(p))
+    if (found) return found
+  }
+
+  // Fallback: pick any Claude model.
+  const anyClaude = ids.find((id) => id.startsWith('claude-'))
+  if (anyClaude) return anyClaude
+  if (ids[0]) return ids[0]
+  throw new Error('No Anthropic models available for this API key.')
+}
+
+async function resolveAnthropicModel(): Promise<string> {
+  const configured = getConfiguredAnthropicModel()
+  if (configured) return configured
+  if (cachedAutoModel) return cachedAutoModel
+
+  const apiKey = getAnthropicApiKey()
+  const res = await fetch('https://api.anthropic.com/v1/models', {
+    method: 'GET',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01'
+    }
+  })
+  const bodyText = await res.text()
+  if (!res.ok) throw new Error(`Anthropic API error (${res.status}) while listing models: ${bodyText}`)
+  const parsed = JSON.parse(bodyText)
+  const models: AnthropicModelInfo[] = Array.isArray(parsed?.data)
+    ? parsed.data
+    : Array.isArray(parsed?.models)
+      ? parsed.models
+      : []
+
+  cachedAutoModel = pickBestModel(models)
+  return cachedAutoModel
+}
+
+async function anthropicMessagesCreate(payload: any): Promise<any> {
+  const apiKey = getAnthropicApiKey()
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify(payload)
+  })
+  const bodyText = await res.text()
+  if (!res.ok) throw new Error(`Anthropic API error (${res.status}): ${bodyText}`)
+  return JSON.parse(bodyText)
+}
+
+function extractTextFromAnthropicContent(content: any[]): string {
+  const parts: string[] = []
+  for (const block of content ?? []) {
+    if (block?.type === 'text' && typeof block.text === 'string') parts.push(block.text)
+  }
+  return parts.join('\n').trim()
+}
+
+function coerceMcpToolText(result: any): string {
+  if (result?.structuredContent !== undefined) return JSON.stringify(result.structuredContent, null, 2)
+  if (Array.isArray(result?.content)) {
+    return result.content
+      .map((c: any) => (c?.type === 'text' ? String(c.text ?? '') : JSON.stringify(c)))
+      .join('\n')
+      .trim()
+  }
+  return JSON.stringify(result ?? {}, null, 2)
+}
+
+function tryParseJson(text: string): any {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
+async function callMcpcapTool(mcp: any, toolName: string, filePath: string): Promise<{ raw: string; json: any | null }> {
+  // The Python script uses `pcap_file`. Some earlier experiments used `filePath`.
+  // Send both to be resilient across mcpcap versions.
+  const args = { pcap_file: filePath, filePath }
+  const result = await mcp.callTool({ name: toolName, arguments: args })
+  const raw = coerceMcpToolText(result)
+  const json = tryParseJson(raw)
+  return { raw, json }
+}
+
+function getTsharkAnalysis(filePath: string): any {
+  const tshark = resolveTsharkPath()
+
+  const run = (args: string[]): { ok: boolean; stdout: string; stderr: string } => {
+    const res = spawnSync(tshark, args, { encoding: 'utf8', timeout: 30000 })
+    return {
+      ok: res.status === 0,
+      stdout: String(res.stdout ?? ''),
+      stderr: String(res.stderr ?? '')
+    }
+  }
+
+  const out: any = {}
+
+  // TCP conversation statistics
+  {
+    const r = run(['-r', filePath, '-q', '-z', 'conv,tcp'])
+    if (r.ok) out.tcp_conversations = r.stdout
+    else out.tcp_conversations_error = r.stderr.trim() || 'tshark conv,tcp failed'
+  }
+
+  // Expert info (note)
+  {
+    const r = run(['-r', filePath, '-q', '-z', 'expert,note'])
+    if (r.ok) out.expert_info = r.stdout
+    else out.expert_info_error = r.stderr.trim() || 'tshark expert,note failed'
+  }
+
+  // IO stats (retransmissions, dup ack, lost segment, zero window)
+  {
+    const z =
+      'io,stat,0,' +
+      'COUNT(tcp.analysis.retransmission)tcp.analysis.retransmission,' +
+      'COUNT(tcp.analysis.duplicate_ack)tcp.analysis.duplicate_ack,' +
+      'COUNT(tcp.analysis.lost_segment)tcp.analysis.lost_segment,' +
+      'COUNT(tcp.analysis.zero_window)tcp.analysis.zero_window'
+    const r = run(['-r', filePath, '-q', '-z', z])
+    if (r.ok) out.tcp_stats = r.stdout
+    else out.tcp_stats_error = r.stderr.trim() || 'tshark io,stat failed'
+  }
+
+  // RTT stats from tcp.analysis.ack_rtt
+  {
+    const r = run(['-r', filePath, '-Y', 'tcp.analysis.ack_rtt', '-T', 'fields', '-e', 'tcp.analysis.ack_rtt'])
+    if (r.ok && r.stdout.trim()) {
+      const vals = r.stdout
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((s) => Number(s))
+        .filter((n) => Number.isFinite(n) && n >= 0)
+      if (vals.length) {
+        const min = Math.min(...vals)
+        const max = Math.max(...vals)
+        const avg = vals.reduce((a, b) => a + b, 0) / vals.length
+        out.rtt_stats = {
+          samples: vals.length,
+          min_ms: min * 1000,
+          max_ms: max * 1000,
+          avg_ms: avg * 1000
+        }
+      }
+    }
+  }
+
+  return out
+}
+
+async function runPacketAnalysisWithClaude(filePath: string): Promise<PacketAnalysisResult> {
+  loadRepoEnvOnce()
+
+  const prompt = resolvePacketAnalysisPrompt()
+  const model = await resolveAnthropicModel()
+
+  const mcpcapCfg = resolveMcpcapServerConfig()
+  const repoRoot = resolveRepoRoot()
+
+  const mcp = new McpClient({ name: 'tcpwatch', version: '0.1.1' })
+  const transport = new StdioClientTransport({
+    command: mcpcapCfg.command,
+    args: mcpcapCfg.args ?? [],
+    cwd: repoRoot,
+    stderr: 'pipe'
+  })
+  await mcp.connect(transport)
+
+  try {
+    // Mirror the Python workflow: run mcpcap tools deterministically, then send all data to Claude.
+    const capinfos = await callMcpcapTool(mcp, 'analyze_capinfos', filePath)
+    const dns = await callMcpcapTool(mcp, 'analyze_dns_packets', filePath)
+    const dhcp = await callMcpcapTool(mcp, 'analyze_dhcp_packets', filePath)
+    const icmp = await callMcpcapTool(mcp, 'analyze_icmp_packets', filePath)
+
+    const tshark = getTsharkAnalysis(filePath)
+
+    const analysisInput = {
+      filePath,
+      mcpcap: {
+        capinfos: capinfos.json ?? capinfos.raw,
+        dns: dns.json ?? dns.raw,
+        dhcp: dhcp.json ?? dhcp.raw,
+        icmp: icmp.json ?? icmp.raw
+      },
+      tshark
+    }
+
+    const messages: AnthropicMessage[] = [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text:
+              `${prompt}\n\n` +
+              `You have already been given the outputs of the mcpcap MCP tools and optional tshark stats. ` +
+              `Do NOT request or call tools; analyze only the data below and follow the output format.\n\n` +
+              `## Analysis Input\n` +
+              '```json\n' +
+              `${JSON.stringify(analysisInput, null, 2)}\n` +
+              '```\n'
+          }
+        ]
+      }
+    ]
+
+    const resp = await anthropicMessagesCreate({
+      model,
+      max_tokens: 2000,
+      messages
+    })
+
+    const content = resp?.content ?? []
+    const finalText = extractTextFromAnthropicContent(content)
+    if (!finalText) throw new Error('Claude returned no text output for analysis.')
+
+    return {
+      filePath,
+      generatedAt: new Date().toISOString(),
+      model,
+      text: finalText
+    }
+  } finally {
+    try {
+      await mcp.close()
+    } catch {
+      // ignore
+    }
+  }
+}
+
 function resolveTcpwatchPath(): string {
   const env = process.env.TCPWATCH_BIN
   if (env && fs.existsSync(env)) return env
@@ -368,6 +705,71 @@ function resolveTsharkPath(): string {
   }
 
   throw new Error('tshark not found. Install Wireshark (includes tshark) or set TSHARK_BIN=/abs/path/to/tshark')
+}
+
+function resolveEditcapPath(): string {
+  const env = process.env.EDITCAP_BIN
+  if (env && fs.existsSync(env)) return env
+
+  const candidates = [
+    '/Applications/Wireshark.app/Contents/MacOS/editcap',
+    '/usr/local/bin/editcap',
+    '/opt/homebrew/bin/editcap'
+  ]
+  for (const cand of candidates) {
+    if (fs.existsSync(cand)) return cand
+  }
+
+  const which = spawnSync('which', ['editcap'], { encoding: 'utf8' })
+  if (which.status === 0) {
+    const p = (which.stdout ?? '').trim()
+    if (p && fs.existsSync(p)) return p
+  }
+
+  throw new Error('editcap not found. Install Wireshark (includes editcap) or set EDITCAP_BIN=/abs/path/to/editcap')
+}
+
+function normalizeSnapLen(raw: unknown, fallback: number): number {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return fallback
+  const n = Math.trunc(Number(raw))
+  if (!Number.isFinite(n)) return fallback
+  // 0 disables truncation.
+  if (n <= 0) return 0
+  // Keep within reasonable bounds.
+  return Math.max(64, Math.min(262144, n))
+}
+
+function applySnapLenToFile(inputFile: string, outputFile: string, snapLen: number): { applied: boolean; message?: string } {
+  if (snapLen <= 0) return { applied: false }
+
+  let editcap: string
+  try {
+    editcap = resolveEditcapPath()
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { applied: false, message: msg }
+  }
+
+  const tmp = `${outputFile}.snap.tmp`
+  try {
+    if (fs.existsSync(tmp)) fs.rmSync(tmp)
+  } catch {
+    // ignore
+  }
+
+  const res = spawnSync(editcap, ['-s', String(snapLen), inputFile, tmp], { encoding: 'utf8' })
+  if (res.status !== 0) {
+    const msg = (res.stderr ?? '').trim() || `editcap failed (code=${res.status})`
+    try {
+      if (fs.existsSync(tmp)) fs.rmSync(tmp)
+    } catch {
+      // ignore
+    }
+    return { applied: false, message: msg }
+  }
+
+  fs.renameSync(tmp, outputFile)
+  return { applied: true }
 }
 
 type WiresharkLauncher =
@@ -441,13 +843,14 @@ function stopCaptureChild() {
   }
 }
 
-async function splitCaptureByTcpStream(captureFile: string, dumpDir: string) {
+async function splitCaptureByTcpStream(captureFile: string, dumpDir: string, snapLen?: number) {
   const tshark = resolveTsharkPath()
+  const effectiveSnapLen = normalizeSnapLen(snapLen, 200)
   const ts = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '')
   const splitDir = path.join(dumpDir, `tcpwatch-split-${ts}`)
   fs.mkdirSync(splitDir, { recursive: true })
 
-  sendCaptureStatus({ splitting: true, splitDir })
+  sendCaptureStatus({ splitting: true, splitDir, snapLen: effectiveSnapLen })
   mainWindow?.webContents.send('tcpwatch:captureSplitStart', { captureFile, splitDir })
 
   const streamIds = await new Promise<number[]>((resolve, reject) => {
@@ -581,9 +984,16 @@ async function splitCaptureByTcpStream(captureFile: string, dumpDir: string) {
     const id = streamIds[i]
     const fileName = `tcp-stream-${String(id).padStart(5, '0')}.pcapng`
     const outFile = path.join(splitDir, fileName)
+    const tmpFile = `${outFile}.tmp`
+
+    try {
+      if (fs.existsSync(tmpFile)) fs.rmSync(tmpFile)
+    } catch {
+      // ignore
+    }
 
     await new Promise<void>((resolve, reject) => {
-      const proc = spawn(tshark, ['-r', captureFile, '-Y', `tcp.stream==${id}`, '-w', outFile], {
+      const proc = spawn(tshark, ['-r', captureFile, '-Y', `tcp.stream==${id}`, '-w', tmpFile], {
         stdio: ['ignore', 'ignore', 'pipe']
       })
       let err = ''
@@ -597,6 +1007,28 @@ async function splitCaptureByTcpStream(captureFile: string, dumpDir: string) {
         resolve()
       })
     })
+
+    // Apply snaplen truncation to per-stream output, if enabled.
+    const snapRes = applySnapLenToFile(tmpFile, outFile, effectiveSnapLen)
+    if (!snapRes.applied) {
+      // If we couldn't apply snaplen (missing editcap or error), keep the original stream file.
+      try {
+        fs.renameSync(tmpFile, outFile)
+      } catch {
+        // ignore
+      }
+      if (snapRes.message) {
+        mainWindow?.webContents.send('tcpwatch:captureLog', {
+          message: `Snaplen not applied (snapLen=${effectiveSnapLen}) for ${fileName}: ${snapRes.message}`
+        })
+      }
+    } else {
+      try {
+        if (fs.existsSync(tmpFile)) fs.rmSync(tmpFile)
+      } catch {
+        // ignore
+      }
+    }
 
     const m = metaByStream.get(id)
     const left = formatEndpoint(m?.src)
@@ -1059,7 +1491,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle(
     'tcpwatch:startCapture',
-    async (_evt, opts: { dumpDir: string; ifaceId: string; durationSeconds: number; port?: unknown }) => {
+    async (_evt, opts: { dumpDir: string; ifaceId: string; durationSeconds: number; port?: unknown; snapLen?: unknown }) => {
       if (captureChild) throw new Error('Capture already running')
 
       const tshark = resolveTsharkPath()
@@ -1078,6 +1510,8 @@ app.whenReady().then(() => {
         port = parsed
       }
 
+      const snapLen = normalizeSnapLen(opts.snapLen, 200)
+
       const ts = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '')
       const filePath = path.join(opts.dumpDir, `tcpwatch-capture-${ts}.pcapng`)
 
@@ -1093,6 +1527,7 @@ app.whenReady().then(() => {
         ifaceId,
         durationSeconds,
         port,
+        snapLen,
         startedAt: new Date().toISOString(),
         splitting: false,
         splitDir: undefined
@@ -1111,7 +1546,7 @@ app.whenReady().then(() => {
         // Only attempt split if a capture file exists.
         try {
           if (captureStatus.filePath && fs.existsSync(captureStatus.filePath) && captureStatus.dumpDir) {
-            await splitCaptureByTcpStream(captureStatus.filePath, captureStatus.dumpDir)
+            await splitCaptureByTcpStream(captureStatus.filePath, captureStatus.dumpDir, captureStatus.snapLen)
           }
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e)
@@ -1158,7 +1593,7 @@ app.whenReady().then(() => {
     return p ?? null
   })
 
-  ipcMain.handle('tcpwatch:readSplitIndex', async (_evt, splitDir: unknown) => {
+  ipcMain.handle('tcpwatch:readSplitIndex', async (_evt, splitDir: unknown, opts: unknown) => {
     const input = String(splitDir ?? '').trim()
     if (!input) throw new Error('Split folder or capture file is required')
 
@@ -1169,7 +1604,8 @@ app.whenReady().then(() => {
     // If user selected a capture file, auto-split it and return the generated index.
     if (st.isFile() && isPcapFile(input)) {
       const dumpDir = path.dirname(input)
-      const res = await splitCaptureByTcpStream(input, dumpDir)
+      const snapLen = normalizeSnapLen((opts as { snapLen?: unknown } | null)?.snapLen, 200)
+      const res = await splitCaptureByTcpStream(input, dumpDir, snapLen)
       const raw = fs.readFileSync(res.indexPath, 'utf8')
       return JSON.parse(raw) as unknown
     }
@@ -1298,6 +1734,16 @@ app.whenReady().then(() => {
     if (!st.isFile()) throw new Error(`Not a file: ${p}`)
     if (!isPcapFile(p)) throw new Error('Unsupported file type. Expected .pcap or .pcapng')
     return await readExpertInfo(p)
+  })
+
+  ipcMain.handle('tcpwatch:analyzeCapture', async (_evt, filePath: unknown) => {
+    const p = String(filePath ?? '').trim()
+    if (!p) throw new Error('File path is required')
+    if (!fs.existsSync(p)) throw new Error(`File not found: ${p}`)
+    const st = fs.statSync(p)
+    if (!st.isFile()) throw new Error(`Not a file: ${p}`)
+    if (!isPcapFile(p)) throw new Error('Unsupported file type. Expected .pcap or .pcapng')
+    return await runPacketAnalysisWithClaude(p)
   })
 
   app.on('activate', () => {
