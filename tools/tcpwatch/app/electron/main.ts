@@ -657,8 +657,11 @@ function getTsharkDnsAnalysis(filePath: string): any {
   {
     const z =
       'io,stat,0,' +
-      'COUNT(dns.flags.response==0)dns_query,' +
-      'COUNT(dns.flags.response==1)dns_response,' +
+      'COUNT(dns)dns,' +
+      'COUNT(mdns)mdns,' +
+      'COUNT(llmnr)llmnr,' +
+      'COUNT(dns.flags.response==0)query,' +
+      'COUNT(dns.flags.response==1)response,' +
       'COUNT(dns.flags.rcode==0)rcode_noerror,' +
       'COUNT(dns.flags.rcode==2)rcode_servfail,' +
       'COUNT(dns.flags.rcode==3)rcode_nxdomain'
@@ -686,15 +689,16 @@ async function extractDnsFromCapture(sourceFile: string): Promise<DnsExtractInde
 
   const outName = 'dns.pcapng'
   const outPath = path.join(extractDir, outName)
+  const filter = '(dns || mdns || llmnr)'
 
   await new Promise<void>((resolve, reject) => {
-    const proc = spawn(tshark, ['-r', sourceFile, '-n', '-Y', 'dns', '-w', outPath], { stdio: ['ignore', 'ignore', 'pipe'] })
+    const proc = spawn(tshark, ['-r', sourceFile, '-n', '-Y', filter, '-w', outPath], { stdio: ['ignore', 'ignore', 'pipe'] })
     let err = ''
     proc.stderr.on('data', (b) => (err += b.toString('utf8')))
     proc.on('error', reject)
     proc.on('close', (code) => {
       if (code !== 0) {
-        reject(new Error(err.trim() || `tshark DNS extract failed (code=${code})`))
+        reject(new Error(err.trim() || `tshark DNS extract failed (filter=${filter}, code=${code})`))
         return
       }
       resolve()

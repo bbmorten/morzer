@@ -2,7 +2,7 @@
 
 Note for tcpwatch app integrations: the app will provide you the outputs of the relevant `mcpcap` tools (and optional `tshark` stats) inline. Do not request additional tools; analyze only the provided data.
 
-Analyze DNS traffic in packet captures (.pcap/.pcapng files) using the mcpcap MCP tools.
+Analyze DNS traffic (including mDNS and LLMNR) in packet captures (.pcap/.pcapng files) using the mcpcap MCP tools.
 
 ## How to Use This Prompt
 

@@ -136,7 +136,7 @@ export function DnsPage({
     <div className={dragActive ? 'panel capDropActive' : 'panel'} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
       <div className="controls">
         <div className="capGridAll">
-          <div className="sub mb6">DNS</div>
+          <div className="sub mb6">DNS (includes mDNS + LLMNR)</div>
           {error ? <div className="sub errorText">{error}</div> : null}
         </div>
 
