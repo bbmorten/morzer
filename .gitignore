@@ -78,3 +78,4 @@ coverage.*
 # --- Repo-level packaging output ---
 /dist/
 captures/
+CREATE_RELEASE.md
