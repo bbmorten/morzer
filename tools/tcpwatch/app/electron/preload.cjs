@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('tcpwatch', {
   openInWireshark: (filePath) => ipcRenderer.invoke('tcpwatch:openInWireshark', filePath),
   expertInfo: (filePath) => ipcRenderer.invoke('tcpwatch:expertInfo', filePath),
   analyzeCapture: (filePath) => ipcRenderer.invoke('tcpwatch:analyzeCapture', filePath),
+  extractDns: (filePath) => ipcRenderer.invoke('tcpwatch:extractDns', filePath),
+  analyzeDnsCapture: (filePath) => ipcRenderer.invoke('tcpwatch:analyzeDnsCapture', filePath),
   stop: () => ipcRenderer.invoke('tcpwatch:stop'),
   isRunning: () => ipcRenderer.invoke('tcpwatch:isRunning'),
   onSnapshot: (cb) => {

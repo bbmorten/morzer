@@ -94,4 +94,14 @@ export type PacketAnalysisResult = {
   text: string
 }
 
+export type DnsExtractIndex = {
+  version: number
+  sourceFile: string
+  extractDir: string
+  createdAt: string
+  files: Array<{
+    file: string
+  }>
+}
+
 // Renderer API surface is declared in src/renderer/vite-env.d.ts.

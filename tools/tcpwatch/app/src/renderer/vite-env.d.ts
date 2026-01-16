@@ -17,6 +17,8 @@ declare global {
       openInWireshark: (filePath: string) => Promise<void>
       expertInfo: (filePath: string) => Promise<import('./types').ExpertInfoResult>
       analyzeCapture: (filePath: string) => Promise<import('./types').PacketAnalysisResult>
+      extractDns: (filePath: string) => Promise<import('./types').DnsExtractIndex>
+      analyzeDnsCapture: (filePath: string) => Promise<import('./types').PacketAnalysisResult>
       stop: () => Promise<void>
       isRunning: () => Promise<boolean>
       onSnapshot: (cb: (snap: import('./types').Snapshot) => void) => () => void

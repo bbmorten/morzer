@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import type { CaptureInterface, CaptureSplitProgress, CaptureStatus, Row, Snapshot, StartOptions } from './types'
 import { ConnectionsTable } from './components/ConnectionsTable'
 import { CapturesPage } from './components/CapturesPage'
+import { DnsPage } from './components/DnsPage'
 import { PacketAnalysisPage } from './components/PacketAnalysisPage'
 import type { PacketAnalysisResult } from './types'
 
 export function App() {
-  const [page, setPage] = useState<'connections' | 'captures' | 'analysis'>('connections')
+  const [page, setPage] = useState<'connections' | 'captures' | 'dns' | 'analysis'>('connections')
   const [running, setRunning] = useState(false)
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [lastError, setLastError] = useState<string | null>(null)
@@ -15,6 +16,9 @@ export function App() {
   const [analysisLoading, setAnalysisLoading] = useState<boolean>(false)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
   const [analysisResult, setAnalysisResult] = useState<PacketAnalysisResult | null>(null)
+  const [analysisTitle, setAnalysisTitle] = useState<string>('Packet Analysis (Claude + mcpcap)')
+  const [analysisKind, setAnalysisKind] = useState<'packet' | 'dns'>('packet')
+  const [analysisBackTo, setAnalysisBackTo] = useState<'captures' | 'dns'>('captures')
 
   const [intervalMs, setIntervalMs] = useState(500)
   const [stateCsv, setStateCsv] = useState('')
@@ -198,16 +202,18 @@ export function App() {
   const title = snapshot?.title || 'tcpwatch'
   const rows = snapshot?.rows ?? []
 
-  const runAnalysis = async (filePath: string) => {
+  const runAnalysis = async (filePath: string, kind: 'packet' | 'dns') => {
     if (!window.tcpwatch) return
     const p = filePath.trim()
     if (!p) return
     setAnalysisFilePath(p)
+    setAnalysisKind(kind)
+    setAnalysisTitle(kind === 'dns' ? 'DNS Analysis (Claude + mcpcap)' : 'Packet Analysis (Claude + mcpcap)')
     setAnalysisLoading(true)
     setAnalysisError(null)
     setAnalysisResult(null)
     try {
-      const res = await window.tcpwatch.analyzeCapture(p)
+      const res = kind === 'dns' ? await window.tcpwatch.analyzeDnsCapture(p) : await window.tcpwatch.analyzeCapture(p)
       setAnalysisResult(res)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -240,24 +246,37 @@ export function App() {
           >
             Captures
           </button>
+          <button className={page === 'dns' ? 'primary' : undefined} onClick={() => setPage('dns')} title="DNS extraction and analysis">
+            DNS
+          </button>
           <span className="badge">macOS</span>
         </div>
       </div>
 
       {page === 'analysis' ? (
         <PacketAnalysisPage
+          title={analysisTitle}
           result={analysisResult ?? (analysisFilePath ? { filePath: analysisFilePath, generatedAt: '', text: '' } : null)}
           loading={analysisLoading}
           error={analysisError}
-          onBack={() => setPage('captures')}
-          onRerun={() => runAnalysis(analysisFilePath)}
+          onBack={() => setPage(analysisBackTo)}
+          onRerun={() => runAnalysis(analysisFilePath, analysisKind)}
+        />
+      ) : page === 'dns' ? (
+        <DnsPage
+          onAnalyze={(filePath) => {
+            setAnalysisBackTo('dns')
+            setPage('analysis')
+            runAnalysis(filePath, 'dns')
+          }}
         />
       ) : page === 'captures' ? (
         <CapturesPage
           captureStatus={captureStatus}
           onAnalyze={(filePath) => {
+            setAnalysisBackTo('captures')
             setPage('analysis')
-            runAnalysis(filePath)
+            runAnalysis(filePath, 'packet')
           }}
         />
       ) : (

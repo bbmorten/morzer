@@ -24,6 +24,7 @@ If macOS blocks the app (unsigned builds), use Finder → right‑click `tcpwatc
 - In **Captures**, use **Search (Description)** to find streams by IP or FQDN.
 - In **Captures**, right-click a stream row and choose **Expert Information** to see Wireshark-style per-packet expert messages for that connection (severity + group keyword aliases) plus a summary (`tshark -z expert`).
 - In **Captures**, right-click a stream row and choose **Analyze** to run the packet-analysis workflow (Claude + `mcpcap` MCP tools) and show a Markdown report on a dedicated page.
+- In **DNS**, select a `.pcap/.pcapng` to extract DNS packets into a new folder (one `dns.pcapng`), then click to open in Wireshark or right-click **Analyze** (uses `.github/prompts/dns-analysis.md`).
 - You can also import any `.pcap`/`.pcapng` file from **Captures** (auto-split + generate `index.json`).
 - You can drag & drop a `.pcap`/`.pcapng` onto the Captures page to import.
 

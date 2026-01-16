@@ -4,12 +4,14 @@ import remarkGfm from 'remark-gfm'
 import type { PacketAnalysisResult } from '../types'
 
 export function PacketAnalysisPage({
+  title,
   result,
   loading,
   error,
   onBack,
   onRerun,
 }: {
+  title: string
   result: PacketAnalysisResult | null
   loading: boolean
   error: string | null
@@ -20,7 +22,7 @@ export function PacketAnalysisPage({
     <div className="panel">
       <div className="controls">
         <div className="capGridAll">
-          <div className="sub mb6">Packet Analysis (Claude + mcpcap)</div>
+          <div className="sub mb6">{title}</div>
           {error ? <div className="sub errorText">{error}</div> : null}
         </div>
 

@@ -42,7 +42,9 @@ When you implement a change (code, packaging, workflow, docs):
 	- Captures UI can import external `.pcap/.pcapng` files by auto-splitting and generating `index.json`.
 		- Also supports drag & drop onto the Captures page.
 	- Captures UI can also run **Analyze** (Claude + `mcpcap` MCP tools) using `.github/prompts/packet-analysis.md`.
+	- DNS UI can extract DNS traffic to a new `dns.pcapng` and run **Analyze** using `.github/prompts/dns-analysis.md`.
 		- In packaged builds, the prompt is bundled under `process.resourcesPath/prompts/packet-analysis.md`.
+		- In packaged builds, the DNS prompt is bundled under `process.resourcesPath/prompts/dns-analysis.md`.
 		- In packaged builds, user config can live under `app.getPath('userData')` (e.g. `.env` and `.mcp.json`).
 
 ## Release / packaging

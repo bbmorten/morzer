@@ -117,6 +117,23 @@ Notes:
 - Right-click a stream row to open the analysis menu, then choose **Expert Information** to view Wireshark-style per-packet expert messages for that connection.
 - Right-click a stream row and choose **Analyze** to run an AI-assisted capture analysis (Claude + `mcpcap` MCP tools) and open the report on a dedicated page.
 
+## DNS
+
+The **DNS** page extracts DNS packets from a `.pcap/.pcapng` into a new folder and produces a DNS-only `dns.pcapng`.
+
+How to use:
+
+1. Open **DNS**.
+2. Select a capture file (or drag & drop one onto the page).
+3. Click **Extract DNS**.
+4. Click `dns.pcapng` to open it in Wireshark.
+5. Right-click `dns.pcapng` and choose **Analyze** to run the DNS prompt (`.github/prompts/dns-analysis.md`) and open the report.
+
+Notes:
+
+- DNS extraction uses `tshark -Y dns` and may produce an empty file if the capture contains no dissectable DNS.
+- DNS analysis uses the same prerequisites as other analysis features (Anthropic API key + mcpcap).
+
 The Captures table shows a **Description** column (derived from the stream endpoints and reverse-DNS hostnames when available).
 
 ### Expert Information

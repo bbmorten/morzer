@@ -368,6 +368,16 @@ type PacketAnalysisResult = {
   text: string
 }
 
+type DnsExtractIndex = {
+  version: number
+  sourceFile: string
+  extractDir: string
+  createdAt: string
+  files: Array<{
+    file: string
+  }>
+}
+
 type McpServerConfig = { command: string; args?: string[] }
 
 function resolveMcpcapServerConfig(): McpServerConfig {
@@ -410,6 +420,20 @@ function resolvePacketAnalysisPrompt(): string {
 
   const promptPath = candidates.find((p) => fs.existsSync(p))
   if (!promptPath) throw new Error(`Prompt not found. Tried: ${candidates.join(', ')}`)
+  return fs.readFileSync(promptPath, 'utf8')
+}
+
+function resolveDnsAnalysisPrompt(): string {
+  const candidates: string[] = []
+  if (app.isPackaged) {
+    candidates.push(path.join(process.resourcesPath, 'prompts', 'dns-analysis.md'))
+  }
+
+  const repoRoot = resolveRepoRoot()
+  candidates.push(path.join(repoRoot, '.github', 'prompts', 'dns-analysis.md'))
+
+  const promptPath = candidates.find((p) => fs.existsSync(p))
+  if (!promptPath) throw new Error(`DNS prompt not found. Tried: ${candidates.join(', ')}`)
   return fs.readFileSync(promptPath, 'utf8')
 }
 
@@ -612,6 +636,157 @@ function getTsharkAnalysis(filePath: string): any {
   }
 
   return out
+}
+
+function getTsharkDnsAnalysis(filePath: string): any {
+  const tshark = resolveTsharkPath()
+
+  const run = (args: string[]): { ok: boolean; stdout: string; stderr: string } => {
+    const res = spawnSync(tshark, args, { encoding: 'utf8', timeout: 30000 })
+    return {
+      ok: res.status === 0,
+      stdout: String(res.stdout ?? ''),
+      stderr: String(res.stderr ?? '')
+    }
+  }
+
+  const out: any = {}
+
+  // Basic counts: queries/responses and rcode breakdown (best-effort).
+  // This works when tshark can dissect DNS and will naturally include UDP/TCP DNS.
+  {
+    const z =
+      'io,stat,0,' +
+      'COUNT(dns.flags.response==0)dns_query,' +
+      'COUNT(dns.flags.response==1)dns_response,' +
+      'COUNT(dns.flags.rcode==0)rcode_noerror,' +
+      'COUNT(dns.flags.rcode==2)rcode_servfail,' +
+      'COUNT(dns.flags.rcode==3)rcode_nxdomain'
+    const r = run(['-r', filePath, '-q', '-z', z])
+    if (r.ok) out.dns_stats = r.stdout
+    else out.dns_stats_error = r.stderr.trim() || 'tshark dns io,stat failed'
+  }
+
+  // Conversation statistics on UDP/53 can be helpful when the capture contains DNS.
+  {
+    const r = run(['-r', filePath, '-q', '-z', 'conv,udp'])
+    if (r.ok) out.udp_conversations = r.stdout
+    else out.udp_conversations_error = r.stderr.trim() || 'tshark conv,udp failed'
+  }
+
+  return out
+}
+
+async function extractDnsFromCapture(sourceFile: string): Promise<DnsExtractIndex> {
+  const tshark = resolveTsharkPath()
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '')
+  const baseDir = path.dirname(sourceFile)
+  const extractDir = path.join(baseDir, `tcpwatch-dns-${ts}`)
+  fs.mkdirSync(extractDir, { recursive: true })
+
+  const outName = 'dns.pcapng'
+  const outPath = path.join(extractDir, outName)
+
+  await new Promise<void>((resolve, reject) => {
+    const proc = spawn(tshark, ['-r', sourceFile, '-n', '-Y', 'dns', '-w', outPath], { stdio: ['ignore', 'ignore', 'pipe'] })
+    let err = ''
+    proc.stderr.on('data', (b) => (err += b.toString('utf8')))
+    proc.on('error', reject)
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(err.trim() || `tshark DNS extract failed (code=${code})`))
+        return
+      }
+      resolve()
+    })
+  })
+
+  const index: DnsExtractIndex = {
+    version: 1,
+    sourceFile,
+    extractDir,
+    createdAt: new Date().toISOString(),
+    files: [{ file: outName }]
+  }
+
+  fs.writeFileSync(path.join(extractDir, 'index.json'), JSON.stringify(index, null, 2), 'utf8')
+  return index
+}
+
+async function runDnsAnalysisWithClaude(filePath: string): Promise<PacketAnalysisResult> {
+  loadRepoEnvOnce()
+
+  const prompt = resolveDnsAnalysisPrompt()
+  const model = await resolveAnthropicModel()
+
+  const mcpcapCfg = resolveMcpcapServerConfig()
+  const repoRoot = resolveRepoRoot()
+
+  const mcp = new McpClient({ name: 'tcpwatch', version: '0.1.1' })
+  const transport = new StdioClientTransport({
+    command: mcpcapCfg.command,
+    args: mcpcapCfg.args ?? [],
+    cwd: repoRoot,
+    stderr: 'pipe'
+  })
+  await mcp.connect(transport)
+
+  try {
+    const capinfos = await callMcpcapTool(mcp, 'analyze_capinfos', filePath)
+    const dns = await callMcpcapTool(mcp, 'analyze_dns_packets', filePath)
+    const tshark = getTsharkDnsAnalysis(filePath)
+
+    const analysisInput = {
+      filePath,
+      mcpcap: {
+        capinfos: capinfos.json ?? capinfos.raw,
+        dns: dns.json ?? dns.raw
+      },
+      tshark
+    }
+
+    const messages: AnthropicMessage[] = [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text:
+              `${prompt}\n\n` +
+              `You have already been given the outputs of the mcpcap MCP tools and optional tshark stats. ` +
+              `Do NOT request or call tools; analyze only the data below and follow the output format.\n\n` +
+              `## Analysis Input\n` +
+              '```json\n' +
+              `${JSON.stringify(analysisInput, null, 2)}\n` +
+              '```\n'
+          }
+        ]
+      }
+    ]
+
+    const resp = await anthropicMessagesCreate({
+      model,
+      max_tokens: 2000,
+      messages
+    })
+
+    const content = resp?.content ?? []
+    const finalText = extractTextFromAnthropicContent(content)
+    if (!finalText) throw new Error('Claude returned no text output for DNS analysis.')
+
+    return {
+      filePath,
+      generatedAt: new Date().toISOString(),
+      model,
+      text: finalText
+    }
+  } finally {
+    try {
+      await mcp.close()
+    } catch {
+      // ignore
+    }
+  }
 }
 
 async function runPacketAnalysisWithClaude(filePath: string): Promise<PacketAnalysisResult> {
@@ -1776,6 +1951,26 @@ app.whenReady().then(() => {
     if (!st.isFile()) throw new Error(`Not a file: ${p}`)
     if (!isPcapFile(p)) throw new Error('Unsupported file type. Expected .pcap or .pcapng')
     return await runPacketAnalysisWithClaude(p)
+  })
+
+  ipcMain.handle('tcpwatch:extractDns', async (_evt, filePath: unknown) => {
+    const p = String(filePath ?? '').trim()
+    if (!p) throw new Error('File path is required')
+    if (!fs.existsSync(p)) throw new Error(`File not found: ${p}`)
+    const st = fs.statSync(p)
+    if (!st.isFile()) throw new Error(`Not a file: ${p}`)
+    if (!isPcapFile(p)) throw new Error('Unsupported file type. Expected .pcap or .pcapng')
+    return await extractDnsFromCapture(p)
+  })
+
+  ipcMain.handle('tcpwatch:analyzeDnsCapture', async (_evt, filePath: unknown) => {
+    const p = String(filePath ?? '').trim()
+    if (!p) throw new Error('File path is required')
+    if (!fs.existsSync(p)) throw new Error(`File not found: ${p}`)
+    const st = fs.statSync(p)
+    if (!st.isFile()) throw new Error(`Not a file: ${p}`)
+    if (!isPcapFile(p)) throw new Error('Unsupported file type. Expected .pcap or .pcapng')
+    return await runDnsAnalysisWithClaude(p)
   })
 
   app.on('activate', () => {

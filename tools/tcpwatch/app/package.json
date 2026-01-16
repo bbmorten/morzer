@@ -53,6 +53,10 @@
       {
         "from": "../../../.github/prompts/packet-analysis.md",
         "to": "prompts/packet-analysis.md"
+      },
+      {
+        "from": "../../../.github/prompts/dns-analysis.md",
+        "to": "prompts/dns-analysis.md"
       }
     ],
     "mac": {
