@@ -77,3 +77,4 @@ coverage.*
 
 # --- Repo-level packaging output ---
 /dist/
+captures/

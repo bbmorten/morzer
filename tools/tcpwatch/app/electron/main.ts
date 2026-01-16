@@ -665,59 +665,26 @@ function deriveProtocolFromFrameProtocols(raw: string): string | undefined {
   return parts[parts.length - 1]
 }
 
-function normalizeExpertSeverity(raw: string): string {
+function keywordAlias(s: string): string {
+  return String(s ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+function normalizeExpertSeverityKeyword(raw: string): string {
   const v = String(raw ?? '').trim()
-  if (!v) return 'unknown'
   const lower = v.toLowerCase()
   if (lower === 'warning') return 'warn'
   if (lower === 'chat' || lower === 'note' || lower === 'warn' || lower === 'error') return lower
-
-  // tshark often outputs numeric severity.
-  if (/^\d+$/.test(v)) {
-    // Best-effort mapping (Wireshark severities: Chat/Note/Warn/Error).
-    switch (Number(v)) {
-      case 0:
-        return 'chat'
-      case 1:
-        return 'note'
-      case 2:
-        return 'warn'
-      case 3:
-        return 'error'
-      default:
-        return `severity:${v}`
-    }
-  }
-
-  return v
+  const k = keywordAlias(v)
+  return k || 'unknown'
 }
 
-function normalizeExpertGroup(raw: string): string {
-  const v = String(raw ?? '').trim()
-  if (!v) return ''
-  if (!/^\d+$/.test(v)) return v
-
-  // Best-effort mapping. Different Wireshark/tshark versions may vary.
-  switch (Number(v)) {
-    case 0:
-      return 'checksum'
-    case 1:
-      return 'sequence'
-    case 2:
-      return 'response'
-    case 3:
-      return 'request'
-    case 4:
-      return 'undecoded'
-    case 5:
-      return 'reassembly'
-    case 6:
-      return 'malformed'
-    case 7:
-      return 'debug'
-    default:
-      return `group:${v}`
-  }
+function normalizeExpertGroupKeyword(raw: string): string {
+  const k = keywordAlias(raw)
+  return k || 'unknown'
 }
 
 function splitAgg(value: string, agg: string): string[] {
@@ -733,37 +700,28 @@ async function readExpertInfo(filePath: string): Promise<ExpertInfoResult> {
   const tshark = resolveTsharkPath()
   const agg = '\u001f'
 
-  // Pull per-packet expert information, similar to Wireshark's "Expert Information".
-  // We rely on Wireshark's internal expert fields exposed by tshark.
-  const args = [
-    '-r',
-    filePath,
-    '-n',
-    '-Y',
-    '_ws.expert.message',
-    '-T',
-    'fields',
-    '-E',
-    'separator=\t',
-    '-E',
-    'occurrence=a',
-    '-E',
-    `aggregator=${agg}`,
-    '-e',
-    'frame.number',
-    '-e',
-    'frame.time_epoch',
-    '-e',
-    'frame.protocols',
-    '-e',
-    '_ws.expert.severity',
-    '-e',
-    '_ws.expert.group',
-    '-e',
-    '_ws.expert.message'
-  ]
-
-  const { stdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+  // 1) Collect per-frame metadata (time + protocol) for frames that have expert info.
+  const frameMeta = new Map<number, { timeEpoch?: number; protocol?: string }>()
+  const metaOut = await new Promise<string>((resolve, reject) => {
+    const args = [
+      '-r',
+      filePath,
+      '-n',
+      '-Y',
+      '_ws.expert.message',
+      '-T',
+      'fields',
+      '-E',
+      'separator=\t',
+      '-E',
+      'occurrence=f',
+      '-e',
+      'frame.number',
+      '-e',
+      'frame.time_epoch',
+      '-e',
+      'frame.protocols'
+    ]
     const proc = spawn(tshark, args, { stdio: ['ignore', 'pipe', 'pipe'] })
     let out = ''
     let err = ''
@@ -772,20 +730,138 @@ async function readExpertInfo(filePath: string): Promise<ExpertInfoResult> {
     proc.on('error', reject)
     proc.on('close', (code) => {
       if (code !== 0) {
-        reject(new Error(err.trim() || `tshark expert scan failed (code=${code})`))
+        reject(new Error(err.trim() || `tshark expert meta scan failed (code=${code})`))
         return
       }
-      resolve({ stdout: out, stderr: err })
+      resolve(out)
     })
-  }).catch(async (e) => {
-    // Some tshark versions can be picky about expert fields or filters.
-    // Provide a more actionable error message.
+  }).catch((e) => {
+    const msg = e instanceof Error ? e.message : String(e)
+    throw new Error(`Failed to extract expert info (tshark meta): ${msg}`)
+  })
+
+  for (const line of metaOut.split(/\r?\n/)) {
+    const t = line.trimEnd()
+    if (!t) continue
+    const [frameStr, timeStr, protosStr] = t.split('\t')
+    const frameNumber = Math.trunc(Number(frameStr))
+    if (!Number.isFinite(frameNumber) || frameNumber <= 0) continue
+    const timeEpoch = Number(timeStr)
+    const protocol = deriveProtocolFromFrameProtocols(protosStr)
+    frameMeta.set(frameNumber, {
+      timeEpoch: Number.isFinite(timeEpoch) ? timeEpoch : undefined,
+      protocol
+    })
+  }
+
+  // 2) Extract expert items with keyword aliases by parsing tshark verbose output.
+  // This avoids brittle numeric ID mappings for _ws.expert.severity/group (which are bitmasks in some versions).
+  const verboseOut = await new Promise<string>((resolve, reject) => {
+    const args = ['-r', filePath, '-n', '-Y', '_ws.expert.message', '-V']
+    const proc = spawn(tshark, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    let out = ''
+    let err = ''
+    proc.stdout.on('data', (b) => (out += b.toString('utf8')))
+    proc.stderr.on('data', (b) => (err += b.toString('utf8')))
+    proc.on('error', reject)
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(err.trim() || `tshark expert verbose scan failed (code=${code})`))
+        return
+      }
+      resolve(out)
+    })
+  }).catch((e) => {
     const msg = e instanceof Error ? e.message : String(e)
     throw new Error(`Failed to extract expert info (tshark): ${msg}`)
   })
 
   const items: ExpertInfoItem[] = []
   const countsBySeverity: Record<string, number> = {}
+
+  let currentFrameNumber: number | null = null
+  let collecting: string | null = null
+
+  const lines = verboseOut.split(/\r?\n/)
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\s+$/g, '')
+    const mFrame = line.match(/^Frame\s+(\d+):\s+/)
+    if (mFrame) {
+      const n = Math.trunc(Number(mFrame[1]))
+      currentFrameNumber = Number.isFinite(n) ? n : null
+      continue
+    }
+
+    if (collecting) {
+      collecting += ' ' + line.trim()
+      if (collecting.includes(']')) {
+        const full = collecting
+        collecting = null
+
+        const parsed = full.match(/\[Expert Info \(([^)]+)\):\s*(.*)\]$/)
+        if (!parsed) continue
+        const sevGroup = parsed[1]
+        const msg = (parsed[2] ?? '').trim()
+        const parts = sevGroup.split('/').map((x) => x.trim()).filter(Boolean)
+        const sevLabel = parts[0] ?? ''
+        const groupLabel = parts[1] ?? ''
+        const severity = normalizeExpertSeverityKeyword(sevLabel)
+        const group = groupLabel ? normalizeExpertGroupKeyword(groupLabel) : undefined
+
+        const meta = currentFrameNumber ? frameMeta.get(currentFrameNumber) : undefined
+        const it: ExpertInfoItem = {
+          frameNumber: currentFrameNumber ?? 0,
+          timeEpoch: meta?.timeEpoch,
+          severity,
+          group,
+          protocol: meta?.protocol,
+          message: msg
+        }
+        items.push(it)
+        countsBySeverity[severity] = (countsBySeverity[severity] ?? 0) + 1
+      }
+      continue
+    }
+
+    const idx = line.indexOf('[Expert Info (')
+    if (idx >= 0) {
+      const start = line.slice(idx).trim()
+      if (start.includes(']')) {
+        collecting = start
+        // Immediately finalize this one-line entry.
+        const full = collecting
+        collecting = null
+
+        const parsed = full.match(/\[Expert Info \(([^)]+)\):\s*(.*)\]$/)
+        if (!parsed) continue
+        const sevGroup = parsed[1]
+        const msg = (parsed[2] ?? '').trim()
+        const parts = sevGroup.split('/').map((x) => x.trim()).filter(Boolean)
+        const sevLabel = parts[0] ?? ''
+        const groupLabel = parts[1] ?? ''
+        const severity = normalizeExpertSeverityKeyword(sevLabel)
+        const group = groupLabel ? normalizeExpertGroupKeyword(groupLabel) : undefined
+
+        const meta = currentFrameNumber ? frameMeta.get(currentFrameNumber) : undefined
+        const it: ExpertInfoItem = {
+          frameNumber: currentFrameNumber ?? 0,
+          timeEpoch: meta?.timeEpoch,
+          severity,
+          group,
+          protocol: meta?.protocol,
+          message: msg
+        }
+        items.push(it)
+        countsBySeverity[severity] = (countsBySeverity[severity] ?? 0) + 1
+        continue
+      }
+      collecting = start
+      continue
+    }
+  }
+
+  // Keep results stable for display.
+  items.sort((a, b) => (a.frameNumber - b.frameNumber) || a.message.localeCompare(b.message))
 
   // Best-effort expert summary (like tshark -z expert). Kept as raw text.
   let summaryText: string | undefined
@@ -808,41 +884,6 @@ async function readExpertInfo(filePath: string): Promise<ExpertInfoResult> {
   } catch {
     // ignore summary failures
   }
-
-  for (const line of stdout.split(/\r?\n/)) {
-    const trimmed = line.trimEnd()
-    if (!trimmed) continue
-    const [frameStr, timeStr, frameProtosStr, sevStr, groupStr, msgStr] = trimmed.split('\t')
-    const frameNumber = Math.trunc(Number(frameStr))
-    const timeEpoch = Number(timeStr)
-    const protocol = deriveProtocolFromFrameProtocols(frameProtosStr)
-
-    const sevs = splitAgg(sevStr ?? '', agg)
-    const groups = splitAgg(groupStr ?? '', agg)
-    const msgs = splitAgg(msgStr ?? '', agg)
-
-    const n = Math.max(sevs.length, groups.length, msgs.length)
-    for (let i = 0; i < n; i++) {
-      const message = (msgs[i] ?? '').trim()
-      if (!message) continue
-      const severity = normalizeExpertSeverity(sevs[i] ?? '')
-      const group = normalizeExpertGroup(groups[i] ?? '')
-
-      const it: ExpertInfoItem = {
-        frameNumber: Number.isFinite(frameNumber) ? frameNumber : 0,
-        timeEpoch: Number.isFinite(timeEpoch) ? timeEpoch : undefined,
-        severity,
-        group: group || undefined,
-        protocol,
-        message
-      }
-      items.push(it)
-      countsBySeverity[severity] = (countsBySeverity[severity] ?? 0) + 1
-    }
-  }
-
-  // Keep results stable for display.
-  items.sort((a, b) => (a.frameNumber - b.frameNumber) || a.message.localeCompare(b.message))
 
   return {
     filePath,
