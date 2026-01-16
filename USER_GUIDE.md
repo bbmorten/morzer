@@ -131,10 +131,10 @@ How to use:
 
 Notes:
 
-- DNS extraction uses `tshark -Y dns` and may produce an empty file if the capture contains no dissectable DNS.
+- DNS extraction uses `tshark -Y (dns || mdns || llmnr)` and may produce an empty file if the capture contains no dissectable DNS/mDNS/LLMNR.
 - DNS analysis uses the same prerequisites as other analysis features (Anthropic API key + mcpcap).
 
-The Captures table shows a **Description** column (derived from the stream endpoints and reverse-DNS hostnames when available).
+The Captures table shows a **Description** column (derived from the stream endpoints and reverse-DNS hostnames when available), plus **Packets** and **Size**.
 
 ### Expert Information
 

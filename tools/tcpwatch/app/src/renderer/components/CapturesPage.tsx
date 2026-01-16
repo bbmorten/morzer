@@ -59,6 +59,23 @@ export function CapturesPage({
     return ''
   }
 
+  function formatBytes(n: number | undefined): string {
+    if (typeof n !== 'number' || !Number.isFinite(n)) return '—'
+    const abs = Math.abs(n)
+    if (abs < 1024) return `${n} B`
+    const kb = n / 1024
+    if (Math.abs(kb) < 1024) return `${kb.toFixed(1)} KB`
+    const mb = kb / 1024
+    if (Math.abs(mb) < 1024) return `${mb.toFixed(1)} MB`
+    const gb = mb / 1024
+    return `${gb.toFixed(2)} GB`
+  }
+
+  function formatPacketCount(n: number | undefined): string {
+    if (typeof n !== 'number' || !Number.isFinite(n)) return '—'
+    return n.toLocaleString()
+  }
+
   const canLoad = Boolean(window.tcpwatch && splitDir.trim())
 
   function isPcapPath(p: string): boolean {
@@ -307,6 +324,8 @@ export function CapturesPage({
                 <th>TCP STREAM</th>
                 <th>DESCRIPTION</th>
                 <th>FILE</th>
+                <th className="capNumCol">PACKETS</th>
+                <th className="capNumCol">SIZE</th>
               </tr>
             </thead>
             <tbody>
@@ -323,6 +342,12 @@ export function CapturesPage({
                     {getDescription(s)}
                   </td>
                   <td>{s.file}</td>
+                  <td className="capNumCol" title={typeof s.packetCount === 'number' ? String(s.packetCount) : ''}>
+                    {formatPacketCount(s.packetCount)}
+                  </td>
+                  <td className="capNumCol" title={typeof s.sizeBytes === 'number' ? String(s.sizeBytes) : ''}>
+                    {formatBytes(s.sizeBytes)}
+                  </td>
                 </tr>
               ))}
             </tbody>

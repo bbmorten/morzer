@@ -66,6 +66,8 @@ export type SplitIndex = {
     src?: { ip?: string; port?: number; hostnames?: string[] }
     dst?: { ip?: string; port?: number; hostnames?: string[] }
     description?: string
+    sizeBytes?: number
+    packetCount?: number
   }>
 }
 

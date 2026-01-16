@@ -21,6 +21,7 @@ If macOS blocks the app (unsigned builds), use Finder → right‑click `tcpwatc
 - Use **Capture (tshark)** to record traffic and split by connection; if **Port** is set, the capture is limited to `tcp port <port>`.
 - Snaplen: stream files are truncated to **200 bytes/packet** by default when splitting; set **0** to disable truncation.
 - In **Captures**, each stream includes a human-friendly description (endpoints + best-effort reverse DNS).
+- In **Captures**, each stream shows packet count and file size.
 - In **Captures**, use **Search (Description)** to find streams by IP or FQDN.
 - In **Captures**, right-click a stream row and choose **Expert Information** to see Wireshark-style per-packet expert messages for that connection (severity + group keyword aliases) plus a summary (`tshark -z expert`).
 - In **Captures**, right-click a stream row and choose **Analyze** to run the packet-analysis workflow (Claude + `mcpcap` MCP tools) and show a Markdown report on a dedicated page.

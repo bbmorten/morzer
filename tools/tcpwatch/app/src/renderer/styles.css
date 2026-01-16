@@ -193,6 +193,12 @@ th {
   white-space: nowrap;
 }
 
+.capNumCol {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .capPad12 { padding: 12px; }
 
 .capDropHint {

@@ -62,6 +62,35 @@ type StreamMeta = {
   description?: string
 }
 
+function getPcapFileStats(filePath: string): { sizeBytes?: number; packetCount?: number } {
+  let sizeBytes: number | undefined
+  try {
+    const st = fs.statSync(filePath)
+    if (st.isFile()) sizeBytes = st.size
+  } catch {
+    // ignore
+  }
+
+  let packetCount: number | undefined
+  try {
+    const tshark = resolveTsharkPath()
+    // io,stat,0 prints a summary table that includes a "Frames"/"Frames:" value depending on version.
+    const res = spawnSync(tshark, ['-r', filePath, '-q', '-z', 'io,stat,0'], { encoding: 'utf8', timeout: 30000 })
+    if (res.status === 0) {
+      const text = String(res.stdout ?? '')
+      const m1 = text.match(/\bFrames\s*:\s*(\d+)\b/i)
+      const m2 = text.match(/\bFrames\b\s+(\d+)\b/i)
+      const raw = m1?.[1] ?? m2?.[1]
+      const n = raw !== undefined ? Math.trunc(Number(raw)) : NaN
+      if (Number.isFinite(n) && n >= 0) packetCount = n
+    }
+  } catch {
+    // ignore
+  }
+
+  return { sizeBytes, packetCount }
+}
+
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined
   const timeout = new Promise<T>((_resolve, reject) => {
@@ -243,13 +272,16 @@ async function buildSplitIndexFromStreamsDir(splitDir: string) {
     splitDir,
     createdAt: new Date().toISOString(),
     streams: streams.map((s) => {
+      const stats = getPcapFileStats(path.join(splitDir, s.file))
       const m = metaByStream.get(s.id)
       return {
         id: s.id,
         file: s.file,
         src: m?.src,
         dst: m?.dst,
-        description: m?.description
+        description: m?.description,
+        sizeBytes: stats.sizeBytes,
+        packetCount: stats.packetCount
       }
     })
   }
@@ -1181,6 +1213,8 @@ async function splitCaptureByTcpStream(captureFile: string, dumpDir: string, sna
       src?: StreamEndpoint
       dst?: StreamEndpoint
       description?: string
+      sizeBytes?: number
+      packetCount?: number
     }>
   } = {
     version: 2,
@@ -1246,7 +1280,16 @@ async function splitCaptureByTcpStream(captureFile: string, dumpDir: string, sna
     const right = formatEndpoint(m?.dst)
       const description = left && right ? `${left} → ${right}` : undefined
 
-    index.streams.push({ id, file: fileName, src: m?.src, dst: m?.dst, description })
+    const stats = getPcapFileStats(outFile)
+    index.streams.push({
+      id,
+      file: fileName,
+      src: m?.src,
+      dst: m?.dst,
+      description,
+      sizeBytes: stats.sizeBytes,
+      packetCount: stats.packetCount
+    })
     mainWindow?.webContents.send('tcpwatch:captureSplitProgress', {
       current: i + 1,
       total,
