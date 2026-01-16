@@ -80,6 +80,15 @@ input[type='text'], input[type='number'] {
   color: var(--text);
 }
 
+select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #0b0f14;
+  color: var(--text);
+}
+
 input[type='checkbox'] {
   width: 18px;
   height: 18px;
@@ -187,6 +196,110 @@ th {
 .capDropActive {
   outline: 2px dashed var(--accent);
   outline-offset: 6px;
+}
+
+.capCtxBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.capCtxMenu {
+  position: fixed;
+  min-width: 220px;
+  background: #0d1218;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+}
+
+.capCtxItem {
+  width: 100%;
+  text-align: left;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.capCtxItem:hover {
+  border-color: color-mix(in srgb, var(--border), transparent 30%);
+  background: color-mix(in srgb, var(--panel), transparent 25%);
+}
+
+.capModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.capModal {
+  width: min(1100px, 95vw);
+  max-height: 85vh;
+  overflow: auto;
+  background: color-mix(in srgb, var(--panel), #000 10%);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.capModalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border), transparent 40%);
+}
+
+.capModalTitle {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.capModalControls {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+  margin-top: 10px;
+}
+
+.capExpertMsg {
+  max-width: 760px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capExpertSummary {
+  margin-top: 10px;
+  border: 1px solid color-mix(in srgb, var(--border), transparent 40%);
+  border-radius: 12px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--panel), transparent 20%);
+}
+
+.capExpertSummary > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.capExpertSummaryPre {
+  margin: 8px 0 0;
+  white-space: pre;
+  overflow: auto;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text);
 }
 
 @media (max-width: 900px) {

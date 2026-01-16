@@ -113,6 +113,7 @@ Notes:
 - You can also **drag & drop** a `.pcap`/`.pcapng` onto the Captures page to import it.
 - Use the **Search (Description)** box to find streams by IP address or hostname.
 - Double-click a stream row to open the `.pcapng` in **Wireshark**.
+- Right-click a stream row to open the analysis menu, then choose **Expert Information** to view Wireshark-style per-packet expert messages for that connection.
 
 The Captures table shows a **Description** column (derived from the stream endpoints and reverse-DNS hostnames when available).
 

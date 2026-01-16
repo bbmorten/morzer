@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('tcpwatch', {
   selectCaptureFile: () => ipcRenderer.invoke('tcpwatch:selectCaptureFile'),
   readSplitIndex: (splitDir) => ipcRenderer.invoke('tcpwatch:readSplitIndex', splitDir),
   openInWireshark: (filePath) => ipcRenderer.invoke('tcpwatch:openInWireshark', filePath),
+  expertInfo: (filePath) => ipcRenderer.invoke('tcpwatch:expertInfo', filePath),
   stop: () => ipcRenderer.invoke('tcpwatch:stop'),
   isRunning: () => ipcRenderer.invoke('tcpwatch:isRunning'),
   onSnapshot: (cb) => {

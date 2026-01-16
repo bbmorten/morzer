@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mcpcap": {
+      "command": "/Users/bulent/git-msp/morzer/.venv/bin/mcpcap",
+      "args": []
+    }
+  }
+}

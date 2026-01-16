@@ -21,6 +21,7 @@ If macOS blocks the app (unsigned builds), use Finder → right‑click `tcpwatc
 - Use **Capture (tshark)** to record traffic and split by connection; if **Port** is set, the capture is limited to `tcp port <port>`.
 - In **Captures**, each stream includes a human-friendly description (endpoints + best-effort reverse DNS).
 - In **Captures**, use **Search (Description)** to find streams by IP or FQDN.
+- In **Captures**, right-click a stream row and choose **Expert Information** to see Wireshark-style per-packet expert messages for that connection.
 - You can also import any `.pcap`/`.pcapng` file from **Captures** (auto-split + generate `index.json`).
 - You can drag & drop a `.pcap`/`.pcapng` onto the Captures page to import.
 

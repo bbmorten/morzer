@@ -15,6 +15,7 @@ declare global {
       selectCaptureFile: () => Promise<string | null>
       readSplitIndex: (splitDir: string) => Promise<import('./types').SplitIndex>
       openInWireshark: (filePath: string) => Promise<void>
+      expertInfo: (filePath: string) => Promise<import('./types').ExpertInfoResult>
       stop: () => Promise<void>
       isRunning: () => Promise<boolean>
       onSnapshot: (cb: (snap: import('./types').Snapshot) => void) => () => void

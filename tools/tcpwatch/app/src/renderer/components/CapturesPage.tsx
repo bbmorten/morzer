@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import type { CaptureStatus, SplitIndex } from '../types'
+import type { CaptureStatus, ExpertInfoResult, SplitIndex } from '../types'
 
 export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus | null }) {
   const [splitDir, setSplitDir] = useState<string>('')
@@ -8,6 +8,19 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
   const [descFilter, setDescFilter] = useState<string>('')
   const [dragActive, setDragActive] = useState<boolean>(false)
   const [loading, setLoading] = useState<boolean>(false)
+
+  const [ctxMenu, setCtxMenu] = useState<{
+    x: number
+    y: number
+    stream: SplitIndex['streams'][number]
+  } | null>(null)
+
+  const [expertOpen, setExpertOpen] = useState<boolean>(false)
+  const [expertLoading, setExpertLoading] = useState<boolean>(false)
+  const [expertError, setExpertError] = useState<string | null>(null)
+  const [expertResult, setExpertResult] = useState<ExpertInfoResult | null>(null)
+  const [expertSeverity, setExpertSeverity] = useState<string>('')
+  const [expertQuery, setExpertQuery] = useState<string>('')
 
   useEffect(() => {
     const fromStatus = captureStatus?.splitDir
@@ -101,6 +114,54 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
     }
   }
 
+  const onRowContextMenu = (e: React.MouseEvent, stream: SplitIndex['streams'][number]) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setCtxMenu({ x: e.clientX, y: e.clientY, stream })
+  }
+
+  const closeCtxMenu = () => setCtxMenu(null)
+
+  const closeExpert = () => {
+    setExpertOpen(false)
+    setExpertLoading(false)
+    setExpertError(null)
+    // Keep last result so reopening is instant; cleared when starting a new run.
+  }
+
+  const runExpertInfo = async (stream: SplitIndex['streams'][number]) => {
+    if (!window.tcpwatch || !index) return
+    closeCtxMenu()
+    setExpertOpen(true)
+    setExpertLoading(true)
+    setExpertError(null)
+    setExpertResult(null)
+    setExpertSeverity('')
+    setExpertQuery('')
+
+    try {
+      const filePath = `${index.splitDir}/${stream.file}`
+      const res = await window.tcpwatch.expertInfo(filePath)
+      setExpertResult(res)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setExpertError(msg)
+    } finally {
+      setExpertLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') {
+        closeCtxMenu()
+        if (expertOpen) closeExpert()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [expertOpen])
+
   const onDragOver = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -187,7 +248,7 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
 
         <div className="capGridAll">
           <div className="sub">
-            Tip: double-click a stream to open in Wireshark.
+            Tip: double-click a stream to open in Wireshark. Right-click for analysis.
           </div>
         </div>
       </div>
@@ -207,8 +268,9 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
                 <tr
                   key={s.id}
                   onDoubleClick={() => onOpen(s.file)}
+                  onContextMenu={(e) => onRowContextMenu(e, s)}
                   className="capClickableRow"
-                  title="Double-click to open in Wireshark"
+                  title="Double-click to open in Wireshark. Right-click for analysis."
                 >
                   <td>{s.id}</td>
                   <td className="capDescCell" title={getDescription(s) || ''}>
@@ -230,6 +292,116 @@ export function CapturesPage({ captureStatus }: { captureStatus: CaptureStatus |
         <div className="footerRow">
           <div>Capture: {index.captureFile}</div>
           <div>Created: {new Date(index.createdAt).toLocaleString()}</div>
+        </div>
+      ) : null}
+
+      {ctxMenu ? (
+        <div className="capCtxBackdrop" onMouseDown={closeCtxMenu} onContextMenu={(e) => e.preventDefault()}>
+          <div
+            className="capCtxMenu"
+            style={{ left: ctxMenu.x, top: ctxMenu.y }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <button className="capCtxItem" onClick={() => runExpertInfo(ctxMenu.stream)}>
+              Expert Information
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {expertOpen ? (
+        <div className="capModalBackdrop" onMouseDown={closeExpert}>
+          <div className="capModal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="capModalHeader">
+              <div style={{ minWidth: 0 }}>
+                <div className="capModalTitle">Expert Information</div>
+                <div className="sub capEllipsis" title={expertResult?.filePath || ''}>
+                  {expertResult?.filePath || (index ? `${index.splitDir}/…` : '')}
+                </div>
+              </div>
+              <button onClick={closeExpert}>Close</button>
+            </div>
+
+            {expertLoading ? <div className="sub capPad12">Analyzing packets…</div> : null}
+            {expertError ? <div className="sub errorText capPad12">{expertError}</div> : null}
+
+            {expertResult && !expertLoading ? (
+              <>
+                {expertResult.summaryText ? (
+                  <details className="capExpertSummary">
+                    <summary>Summary (tshark -z expert)</summary>
+                    <pre className="capExpertSummaryPre">{expertResult.summaryText}</pre>
+                  </details>
+                ) : null}
+
+                <div className="capModalControls">
+                  <div>
+                    <label>Severity</label>
+                    <select value={expertSeverity} onChange={(e) => setExpertSeverity(e.target.value)}>
+                      <option value="">All</option>
+                      {Object.keys(expertResult.countsBySeverity)
+                        .sort((a, b) => a.localeCompare(b))
+                        .map((k) => (
+                          <option key={k} value={k}>
+                            {k} ({expertResult.countsBySeverity[k]})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div className="capGridSpan3">
+                    <label>Search (message)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. retransmission, checksum, out-of-order"
+                      value={expertQuery}
+                      onChange={(e) => setExpertQuery(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label>Total</label>
+                    <div className="sub">{expertResult.total}</div>
+                  </div>
+                </div>
+
+                <div className="tableWrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>PKT</th>
+                        <th>SEVERITY</th>
+                        <th>GROUP</th>
+                        <th>PROTO</th>
+                        <th>MESSAGE</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {expertResult.items
+                        .filter((it) => (!expertSeverity ? true : it.severity === expertSeverity))
+                        .filter((it) => {
+                          const q = expertQuery.trim().toLowerCase()
+                          if (!q) return true
+                          const msg = (it.message ?? '').toLowerCase()
+                          const grp = (it.group ?? '').toLowerCase()
+                          const proto = (it.protocol ?? '').toLowerCase()
+                          return msg.includes(q) || grp.includes(q) || proto.includes(q)
+                        })
+                        .map((it, i) => (
+                          <tr key={`${it.frameNumber}-${i}`}>
+                            <td>{it.frameNumber}</td>
+                            <td>{it.severity}</td>
+                            <td>{it.group ?? ''}</td>
+                            <td>{it.protocol ?? ''}</td>
+                            <td className="capExpertMsg" title={it.message}>
+                              {it.message}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : null}
+          </div>
         </div>
       ) : null}
     </div>

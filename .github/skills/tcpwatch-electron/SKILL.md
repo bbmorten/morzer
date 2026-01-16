@@ -33,6 +33,7 @@ When you implement a change (code, packaging, workflow, docs):
 - Renderer build output is `tools/tcpwatch/app/renderer-dist` (to avoid collisions with electron-builder output `dist`).
 - Packet capture uses `tshark`.
 	- Capture filters use `tshark -f` (BPF). Display filters would be `-Y` (Wireshark filter syntax).
+	- "Expert Information" analysis reads Wireshark expert fields via `tshark` (e.g. `_ws.expert.*`).
 	- If the UI has a port filter, capture should be scoped accordingly (currently `tcp port <port>`).
 	- Split output `index.json` includes per-stream endpoints and best-effort reverse-DNS hostnames.
 		- Reverse DNS can be disabled with `TCPWATCH_RDNS=0`.

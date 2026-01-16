@@ -635,6 +635,225 @@ function isLikelySplitFolder(dirPath: string): boolean {
   }
 }
 
+type ExpertInfoItem = {
+  frameNumber: number
+  timeEpoch?: number
+  severity: string
+  group?: string
+  protocol?: string
+  message: string
+}
+
+type ExpertInfoResult = {
+  filePath: string
+  generatedAt: string
+  total: number
+  countsBySeverity: Record<string, number>
+  summaryText?: string
+  items: ExpertInfoItem[]
+}
+
+function deriveProtocolFromFrameProtocols(raw: string): string | undefined {
+  const s = String(raw ?? '').trim()
+  if (!s) return undefined
+  const parts = s.split(':').map((p) => p.trim()).filter(Boolean)
+  if (parts.length === 0) return undefined
+  // Prefer "tcp" when present, otherwise use the innermost dissector.
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (parts[i] === 'tcp') return 'tcp'
+  }
+  return parts[parts.length - 1]
+}
+
+function normalizeExpertSeverity(raw: string): string {
+  const v = String(raw ?? '').trim()
+  if (!v) return 'unknown'
+  const lower = v.toLowerCase()
+  if (lower === 'warning') return 'warn'
+  if (lower === 'chat' || lower === 'note' || lower === 'warn' || lower === 'error') return lower
+
+  // tshark often outputs numeric severity.
+  if (/^\d+$/.test(v)) {
+    // Best-effort mapping (Wireshark severities: Chat/Note/Warn/Error).
+    switch (Number(v)) {
+      case 0:
+        return 'chat'
+      case 1:
+        return 'note'
+      case 2:
+        return 'warn'
+      case 3:
+        return 'error'
+      default:
+        return `severity:${v}`
+    }
+  }
+
+  return v
+}
+
+function normalizeExpertGroup(raw: string): string {
+  const v = String(raw ?? '').trim()
+  if (!v) return ''
+  if (!/^\d+$/.test(v)) return v
+
+  // Best-effort mapping. Different Wireshark/tshark versions may vary.
+  switch (Number(v)) {
+    case 0:
+      return 'checksum'
+    case 1:
+      return 'sequence'
+    case 2:
+      return 'response'
+    case 3:
+      return 'request'
+    case 4:
+      return 'undecoded'
+    case 5:
+      return 'reassembly'
+    case 6:
+      return 'malformed'
+    case 7:
+      return 'debug'
+    default:
+      return `group:${v}`
+  }
+}
+
+function splitAgg(value: string, agg: string): string[] {
+  const s = String(value ?? '').trim()
+  if (!s) return []
+  return s
+    .split(agg)
+    .map((x) => x.trim())
+    .filter(Boolean)
+}
+
+async function readExpertInfo(filePath: string): Promise<ExpertInfoResult> {
+  const tshark = resolveTsharkPath()
+  const agg = '\u001f'
+
+  // Pull per-packet expert information, similar to Wireshark's "Expert Information".
+  // We rely on Wireshark's internal expert fields exposed by tshark.
+  const args = [
+    '-r',
+    filePath,
+    '-n',
+    '-Y',
+    '_ws.expert.message',
+    '-T',
+    'fields',
+    '-E',
+    'separator=\t',
+    '-E',
+    'occurrence=a',
+    '-E',
+    `aggregator=${agg}`,
+    '-e',
+    'frame.number',
+    '-e',
+    'frame.time_epoch',
+    '-e',
+    'frame.protocols',
+    '-e',
+    '_ws.expert.severity',
+    '-e',
+    '_ws.expert.group',
+    '-e',
+    '_ws.expert.message'
+  ]
+
+  const { stdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    const proc = spawn(tshark, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    let out = ''
+    let err = ''
+    proc.stdout.on('data', (b) => (out += b.toString('utf8')))
+    proc.stderr.on('data', (b) => (err += b.toString('utf8')))
+    proc.on('error', reject)
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(err.trim() || `tshark expert scan failed (code=${code})`))
+        return
+      }
+      resolve({ stdout: out, stderr: err })
+    })
+  }).catch(async (e) => {
+    // Some tshark versions can be picky about expert fields or filters.
+    // Provide a more actionable error message.
+    const msg = e instanceof Error ? e.message : String(e)
+    throw new Error(`Failed to extract expert info (tshark): ${msg}`)
+  })
+
+  const items: ExpertInfoItem[] = []
+  const countsBySeverity: Record<string, number> = {}
+
+  // Best-effort expert summary (like tshark -z expert). Kept as raw text.
+  let summaryText: string | undefined
+  try {
+    summaryText = await new Promise<string>((resolve, reject) => {
+      const proc = spawn(tshark, ['-r', filePath, '-q', '-z', 'expert'], { stdio: ['ignore', 'pipe', 'pipe'] })
+      let out = ''
+      let err = ''
+      proc.stdout.on('data', (b) => (out += b.toString('utf8')))
+      proc.stderr.on('data', (b) => (err += b.toString('utf8')))
+      proc.on('error', reject)
+      proc.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(err.trim() || `tshark -z expert failed (code=${code})`))
+          return
+        }
+        resolve(out.trim())
+      })
+    })
+  } catch {
+    // ignore summary failures
+  }
+
+  for (const line of stdout.split(/\r?\n/)) {
+    const trimmed = line.trimEnd()
+    if (!trimmed) continue
+    const [frameStr, timeStr, frameProtosStr, sevStr, groupStr, msgStr] = trimmed.split('\t')
+    const frameNumber = Math.trunc(Number(frameStr))
+    const timeEpoch = Number(timeStr)
+    const protocol = deriveProtocolFromFrameProtocols(frameProtosStr)
+
+    const sevs = splitAgg(sevStr ?? '', agg)
+    const groups = splitAgg(groupStr ?? '', agg)
+    const msgs = splitAgg(msgStr ?? '', agg)
+
+    const n = Math.max(sevs.length, groups.length, msgs.length)
+    for (let i = 0; i < n; i++) {
+      const message = (msgs[i] ?? '').trim()
+      if (!message) continue
+      const severity = normalizeExpertSeverity(sevs[i] ?? '')
+      const group = normalizeExpertGroup(groups[i] ?? '')
+
+      const it: ExpertInfoItem = {
+        frameNumber: Number.isFinite(frameNumber) ? frameNumber : 0,
+        timeEpoch: Number.isFinite(timeEpoch) ? timeEpoch : undefined,
+        severity,
+        group: group || undefined,
+        protocol,
+        message
+      }
+      items.push(it)
+      countsBySeverity[severity] = (countsBySeverity[severity] ?? 0) + 1
+    }
+  }
+
+  // Keep results stable for display.
+  items.sort((a, b) => (a.frameNumber - b.frameNumber) || a.message.localeCompare(b.message))
+
+  return {
+    filePath,
+    generatedAt: new Date().toISOString(),
+    total: items.length,
+    countsBySeverity,
+    summaryText,
+    items
+  }
+}
+
 function stopChild() {
   if (!child) return
   try {
@@ -1028,6 +1247,16 @@ app.whenReady().then(() => {
     // Fallback: open with default associated app.
     const err = await shell.openPath(p)
     if (err) throw new Error(err)
+  })
+
+  ipcMain.handle('tcpwatch:expertInfo', async (_evt, filePath: unknown) => {
+    const p = String(filePath ?? '').trim()
+    if (!p) throw new Error('File path is required')
+    if (!fs.existsSync(p)) throw new Error(`File not found: ${p}`)
+    const st = fs.statSync(p)
+    if (!st.isFile()) throw new Error(`Not a file: ${p}`)
+    if (!isPcapFile(p)) throw new Error('Unsupported file type. Expected .pcap or .pcapng')
+    return await readExpertInfo(p)
   })
 
   app.on('activate', () => {

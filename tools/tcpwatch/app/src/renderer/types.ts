@@ -67,4 +67,22 @@ export type SplitIndex = {
   }>
 }
 
+export type ExpertInfoItem = {
+  frameNumber: number
+  timeEpoch?: number
+  severity: string
+  group?: string
+  protocol?: string
+  message: string
+}
+
+export type ExpertInfoResult = {
+  filePath: string
+  generatedAt: string
+  total: number
+  countsBySeverity: Record<string, number>
+  summaryText?: string
+  items: ExpertInfoItem[]
+}
+
 // Renderer API surface is declared in src/renderer/vite-env.d.ts.
