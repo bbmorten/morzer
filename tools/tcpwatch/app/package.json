@@ -49,6 +49,10 @@
       {
         "from": "../tcpwatch",
         "to": "tcpwatch"
+      },
+      {
+        "from": "../../../.github/prompts/packet-analysis.md",
+        "to": "prompts/packet-analysis.md"
       }
     ],
     "mac": {

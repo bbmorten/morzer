@@ -23,7 +23,7 @@ If macOS blocks the app (unsigned builds), use Finder → right‑click `tcpwatc
 - In **Captures**, each stream includes a human-friendly description (endpoints + best-effort reverse DNS).
 - In **Captures**, use **Search (Description)** to find streams by IP or FQDN.
 - In **Captures**, right-click a stream row and choose **Expert Information** to see Wireshark-style per-packet expert messages for that connection (severity + group keyword aliases) plus a summary (`tshark -z expert`).
-- In **Captures**, right-click a stream row and choose **Analyze** to run the `.github/prompts/packet-analysis.md` workflow (Claude + `mcpcap` MCP tools) and show a Markdown report on a dedicated page.
+- In **Captures**, right-click a stream row and choose **Analyze** to run the packet-analysis workflow (Claude + `mcpcap` MCP tools) and show a Markdown report on a dedicated page.
 - You can also import any `.pcap`/`.pcapng` file from **Captures** (auto-split + generate `index.json`).
 - You can drag & drop a `.pcap`/`.pcapng` onto the Captures page to import.
 
@@ -37,6 +37,13 @@ For details (filters, troubleshooting, permissions), see `USER_GUIDE.md`.
 - A built `tcpwatch` binary at `tools/tcpwatch/tcpwatch`
 - Wireshark installed (provides `tshark` and `editcap`) for capture/splitting, snaplen truncation, and Expert Information analysis
 - For **Analyze**: an Anthropic API key (`ANTHROPIC_API_KEY`) and `mcpcap` available via `.mcp.json` (or `TCPWATCH_MCPCAP_BIN` override). See `.env.example`.
+
+Packaged app notes (Analyze):
+
+- The prompt is bundled into the app at `Contents/Resources/prompts/packet-analysis.md`.
+- You can configure:
+	- `ANTHROPIC_API_KEY` via `~/Library/Application Support/tcpwatch/.env`
+	- `mcpcap` via `~/Library/Application Support/tcpwatch/.mcp.json` (or `TCPWATCH_MCPCAP_BIN`)
 
 Build the binary:
 

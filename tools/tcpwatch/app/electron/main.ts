@@ -346,9 +346,18 @@ function loadRepoEnvOnce() {
   envLoaded = true
 
   const repoRoot = resolveRepoRoot()
-  const envPath = path.join(repoRoot, '.env')
-  if (fs.existsSync(envPath)) {
-    dotenv.config({ path: envPath })
+  const candidates: string[] = []
+  if (app.isPackaged) {
+    // Allow end users to configure secrets without needing a repo checkout.
+    candidates.push(path.join(app.getPath('userData'), '.env'))
+  }
+  candidates.push(path.join(repoRoot, '.env'))
+
+  for (const envPath of candidates) {
+    if (fs.existsSync(envPath)) {
+      dotenv.config({ path: envPath })
+      break
+    }
   }
 }
 
@@ -366,9 +375,19 @@ function resolveMcpcapServerConfig(): McpServerConfig {
   if (envBin && fs.existsSync(envBin)) return { command: envBin, args: [] }
 
   const repoRoot = resolveRepoRoot()
-  const cfgPath = path.join(repoRoot, '.mcp.json')
-  if (!fs.existsSync(cfgPath)) {
-    throw new Error('mcpcap MCP server not configured. Expected .mcp.json at repo root or set TCPWATCH_MCPCAP_BIN=/abs/path/to/mcpcap')
+  const candidates: string[] = []
+  if (app.isPackaged) {
+    // Packaged apps don't have the repo root; allow a user-level config file.
+    candidates.push(path.join(app.getPath('userData'), '.mcp.json'))
+  }
+  candidates.push(path.join(repoRoot, '.mcp.json'))
+
+  const cfgPath = candidates.find((p) => fs.existsSync(p))
+  if (!cfgPath) {
+    const hint = app.isPackaged
+      ? `Create ${path.join(app.getPath('userData'), '.mcp.json')} or set TCPWATCH_MCPCAP_BIN=/abs/path/to/mcpcap`
+      : 'Expected .mcp.json at repo root or set TCPWATCH_MCPCAP_BIN=/abs/path/to/mcpcap'
+    throw new Error(`mcpcap MCP server not configured. ${hint}`)
   }
   const raw = fs.readFileSync(cfgPath, 'utf8')
   const parsed = JSON.parse(raw) as any
@@ -380,9 +399,17 @@ function resolveMcpcapServerConfig(): McpServerConfig {
 }
 
 function resolvePacketAnalysisPrompt(): string {
+  const candidates: string[] = []
+  if (app.isPackaged) {
+    // Shipped as an external resource so we can read it from the filesystem.
+    candidates.push(path.join(process.resourcesPath, 'prompts', 'packet-analysis.md'))
+  }
+
   const repoRoot = resolveRepoRoot()
-  const promptPath = path.join(repoRoot, '.github', 'prompts', 'packet-analysis.md')
-  if (!fs.existsSync(promptPath)) throw new Error(`Prompt not found: ${promptPath}`)
+  candidates.push(path.join(repoRoot, '.github', 'prompts', 'packet-analysis.md'))
+
+  const promptPath = candidates.find((p) => fs.existsSync(p))
+  if (!promptPath) throw new Error(`Prompt not found. Tried: ${candidates.join(', ')}`)
   return fs.readFileSync(promptPath, 'utf8')
 }
 
@@ -399,7 +426,12 @@ type AnthropicMessage = {
 
 function getAnthropicApiKey(): string {
   const key = String(process.env.ANTHROPIC_API_KEY ?? '').trim()
-  if (!key) throw new Error('Missing ANTHROPIC_API_KEY. Create a .env at repo root with ANTHROPIC_API_KEY=...')
+  if (!key) {
+    const hint = app.isPackaged
+      ? `Create ${path.join(app.getPath('userData'), '.env')} with ANTHROPIC_API_KEY=...`
+      : 'Create a .env at repo root with ANTHROPIC_API_KEY=...'
+    throw new Error(`Missing ANTHROPIC_API_KEY. ${hint}`)
+  }
   return key
 }
 

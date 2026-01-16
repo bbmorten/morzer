@@ -138,17 +138,28 @@ Notes:
 
 ### Analyze (Claude + mcpcap)
 
-The **Analyze** view runs the prompt in `.github/prompts/packet-analysis.md` and uses the `mcpcap` MCP server to extract structured information from the capture.
+The **Analyze** view runs a packaged packet-analysis prompt and uses the `mcpcap` MCP server to extract structured information from the capture.
 
 The report is rendered as Markdown (tables, code blocks, etc.).
 
 Prerequisites:
 
-- A configured `mcpcap` MCP server (typically via the repo’s `.mcp.json`, or by setting `TCPWATCH_MCPCAP_BIN`).
-- An Anthropic API key in a local `.env` file at the repo root:
+- A configured `mcpcap` MCP server.
+- An Anthropic API key.
 
-  - Copy `.env.example` → `.env`
-  - Set `ANTHROPIC_API_KEY=...`
+Config locations:
+
+- **Packaged app**: put config under `~/Library/Application Support/tcpwatch/`
+  - `.env` with `ANTHROPIC_API_KEY=...`
+  - `.mcp.json` with an `mcpcap` server entry (or set `TCPWATCH_MCPCAP_BIN`)
+- **Dev / repo checkout**: use repo root files:
+  - `.env`
+  - `.mcp.json`
+
+To create `.env`:
+
+- Copy `.env.example` → `.env`
+- Set `ANTHROPIC_API_KEY=...`
 
 Notes:
 
