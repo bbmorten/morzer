@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
+import os from 'node:os'
 import { spawn, spawnSync, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import readline from 'node:readline'
 import { reverse as dnsReverse, lookupService as dnsLookupService } from 'node:dns/promises'
@@ -1727,6 +1728,76 @@ app.whenReady().then(() => {
       if (err.code === 'EPERM') throw new Error(`Permission denied to terminate PID ${targetPid}`)
       throw new Error(`Failed to terminate PID ${targetPid}: ${err.message}`)
     }
+  })
+
+  ipcMain.handle('tcpwatch:processInfo', async (_evt, pid: unknown): Promise<{ output: string } | { error: string }> => {
+    const parsed = typeof pid === 'number' ? pid : Number(pid)
+    const targetPid = Math.trunc(parsed)
+    if (!Number.isFinite(targetPid) || targetPid < 1) {
+      return { error: `Invalid PID: ${String(pid)}` }
+    }
+
+    // Strip ANSI escape codes from output
+    const stripAnsi = (str: string): string => {
+      // eslint-disable-next-line no-control-regex
+      return str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
+    }
+
+    // Find witr binary - check common Go bin paths since Electron doesn't inherit user's shell PATH
+    const findWitr = (): string => {
+      const home = os.homedir()
+      const candidates = [
+        path.join(home, 'go', 'bin', 'witr'),
+        '/usr/local/go/bin/witr',
+        '/opt/homebrew/bin/witr',
+        path.join(home, '.local', 'bin', 'witr')
+      ]
+      for (const candidate of candidates) {
+        try {
+          fs.accessSync(candidate, fs.constants.X_OK)
+          return candidate
+        } catch {
+          // Not found or not executable, try next
+        }
+      }
+      return 'witr' // Fallback to PATH lookup
+    }
+
+    const witrPath = findWitr()
+
+    return new Promise((resolve) => {
+      const cp = spawn(witrPath, ['-p', String(targetPid)], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 10000
+      })
+
+      let stdout = ''
+      let stderr = ''
+
+      cp.stdout?.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString()
+      })
+
+      cp.stderr?.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString()
+      })
+
+      cp.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'ENOENT') {
+          resolve({ error: 'witr is not installed. Install it with: go install github.com/morzer/witr@latest' })
+        } else {
+          resolve({ error: `Failed to run witr: ${err.message}` })
+        }
+      })
+
+      cp.on('close', (code) => {
+        if (code === 0) {
+          resolve({ output: stripAnsi(stdout).trim() || 'No information available for this process.' })
+        } else {
+          resolve({ error: stripAnsi(stderr).trim() || `witr exited with code ${code}` })
+        }
+      })
+    })
   })
 
   ipcMain.handle('tcpwatch:selectDumpFolder', async () => {

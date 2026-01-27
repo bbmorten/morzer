@@ -1,14 +1,50 @@
+import { useState } from 'react'
 import type { Row } from '../types'
+
+interface ContextMenu {
+  x: number
+  y: number
+  row: Row
+}
 
 export function ConnectionsTable({
   rows,
-  onRowDoubleClick
+  onKillProcess,
+  onProcessInfo
 }: {
   rows: Row[]
-  onRowDoubleClick?: (row: Row) => void
+  onKillProcess?: (row: Row) => void
+  onProcessInfo?: (pid: number) => void
 }) {
+  const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
+
+  const handleContextMenu = (e: React.MouseEvent, row: Row) => {
+    if (!onKillProcess && !onProcessInfo) return
+    e.preventDefault()
+    setContextMenu({ x: e.clientX, y: e.clientY, row })
+  }
+
+  const handleKill = () => {
+    if (contextMenu && onKillProcess) {
+      onKillProcess(contextMenu.row)
+    }
+    setContextMenu(null)
+  }
+
+  const handleInfo = () => {
+    if (contextMenu && onProcessInfo) {
+      const pid = contextMenu.row.PID
+      if (Number.isFinite(pid) && pid > 0) {
+        onProcessInfo(pid)
+      }
+    }
+    setContextMenu(null)
+  }
+
+  const closeMenu = () => setContextMenu(null)
+
   return (
-    <div className="tableWrap">
+    <div className="tableWrap" onClick={closeMenu}>
       <table>
         <thead>
           <tr>
@@ -24,9 +60,8 @@ export function ConnectionsTable({
           {rows.map((r, idx) => (
             <tr
               key={`${r.Proto}-${r.Local}-${r.Remote}-${r.PID}-${idx}`}
-              onDoubleClick={() => onRowDoubleClick?.(r)}
-              style={onRowDoubleClick ? { cursor: 'pointer' } : undefined}
-              title={onRowDoubleClick ? 'Double-click to terminate this PID' : undefined}
+              onContextMenu={(e) => handleContextMenu(e, r)}
+              title={onKillProcess ? 'Right-click for options' : undefined}
             >
               <td>{r.Proto}</td>
               <td>{r.Local}</td>
@@ -38,6 +73,26 @@ export function ConnectionsTable({
           ))}
         </tbody>
       </table>
+      {contextMenu && (
+        <>
+          <div className="connCtxBackdrop" onClick={closeMenu} />
+          <div
+            className="connCtxMenu"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+          >
+            {onProcessInfo && contextMenu.row.PID > 0 && (
+              <button type="button" className="connCtxItem" onClick={handleInfo}>
+                Info (PID {contextMenu.row.PID})
+              </button>
+            )}
+            {onKillProcess && (
+              <button type="button" className="connCtxItem danger" onClick={handleKill}>
+                Kill Process (PID {contextMenu.row.PID})
+              </button>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }

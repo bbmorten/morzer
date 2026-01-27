@@ -413,6 +413,44 @@ th {
   color: var(--text);
 }
 
+/* Connections table context menu */
+.connCtxBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.connCtxMenu {
+  position: fixed;
+  min-width: 180px;
+  background: #0d1218;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  z-index: 1001;
+}
+
+.connCtxItem {
+  width: 100%;
+  text-align: left;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.connCtxItem:hover {
+  border-color: color-mix(in srgb, var(--border), transparent 30%);
+  background: color-mix(in srgb, var(--panel), transparent 25%);
+}
+
+.connCtxItem.danger {
+  color: var(--danger);
+}
+
 @media (max-width: 900px) {
   .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
