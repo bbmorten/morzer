@@ -4,7 +4,7 @@ Create a new release for tcpwatch-app.
 
 ## Instructions
 
-When the user runs `/release`, follow these steps:
+When the user runs `/new-release`, follow these steps:
 
 ### 1. Check for uncommitted changes
 Run `git status` to see if there are uncommitted changes. If there are changes:
@@ -51,7 +51,13 @@ Run `git status` to see if there are uncommitted changes. If there are changes:
   - Create a git tag: `tcpwatch-app-v{VERSION}`
   - Push to remote
 
+### 7. Create GitHub Release
+After the tag is pushed, create a GitHub release:
+```bash
+gh release create tcpwatch-app-v{VERSION} -F .github/releases/tcpwatch-app-v{VERSION}.md
+```
+
 ## Example Usage
 
-User: `/release`
+User: `/new-release`
 Assistant: I'll help you create a new release. Let me check the current state...
