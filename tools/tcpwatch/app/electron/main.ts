@@ -1729,6 +1729,54 @@ app.whenReady().then(() => {
     }
   })
 
+  ipcMain.handle('tcpwatch:processInfo', async (_evt, pid: unknown): Promise<{ output: string } | { error: string }> => {
+    const parsed = typeof pid === 'number' ? pid : Number(pid)
+    const targetPid = Math.trunc(parsed)
+    if (!Number.isFinite(targetPid) || targetPid < 1) {
+      return { error: `Invalid PID: ${String(pid)}` }
+    }
+
+    // Strip ANSI escape codes from output
+    const stripAnsi = (str: string): string => {
+      // eslint-disable-next-line no-control-regex
+      return str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
+    }
+
+    return new Promise((resolve) => {
+      const cp = spawn('witr', ['-p', String(targetPid)], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 10000
+      })
+
+      let stdout = ''
+      let stderr = ''
+
+      cp.stdout?.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString()
+      })
+
+      cp.stderr?.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString()
+      })
+
+      cp.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'ENOENT') {
+          resolve({ error: 'witr is not installed. Install it with: go install github.com/morzer/witr@latest' })
+        } else {
+          resolve({ error: `Failed to run witr: ${err.message}` })
+        }
+      })
+
+      cp.on('close', (code) => {
+        if (code === 0) {
+          resolve({ output: stripAnsi(stdout).trim() || 'No information available for this process.' })
+        } else {
+          resolve({ error: stripAnsi(stderr).trim() || `witr exited with code ${code}` })
+        }
+      })
+    })
+  })
+
   ipcMain.handle('tcpwatch:selectDumpFolder', async () => {
     const res = await dialog.showOpenDialog({
       title: 'Choose capture output folder',

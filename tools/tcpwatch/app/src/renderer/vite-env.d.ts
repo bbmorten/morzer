@@ -6,6 +6,7 @@ declare global {
       start: (opts: import('./types').StartOptions) => Promise<void>
       snapshot: (opts: import('./types').StartOptions) => Promise<import('./types').Snapshot>
       killProcess: (pid: number) => Promise<void>
+      processInfo: (pid: number) => Promise<{ output: string } | { error: string }>
       selectDumpFolder: () => Promise<string | null>
       listCaptureInterfaces: () => Promise<import('./types').CaptureInterface[]>
       startCapture: (opts: import('./types').CaptureStartOptions) => Promise<import('./types').CaptureStatus>

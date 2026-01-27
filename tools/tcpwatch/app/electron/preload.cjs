@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('tcpwatch', {
   start: (opts) => ipcRenderer.invoke('tcpwatch:start', opts),
   snapshot: (opts) => ipcRenderer.invoke('tcpwatch:snapshot', opts),
   killProcess: (pid) => ipcRenderer.invoke('tcpwatch:killProcess', pid),
+  processInfo: (pid) => ipcRenderer.invoke('tcpwatch:processInfo', pid),
   selectDumpFolder: () => ipcRenderer.invoke('tcpwatch:selectDumpFolder'),
   listCaptureInterfaces: () => ipcRenderer.invoke('tcpwatch:listCaptureInterfaces'),
   startCapture: (opts) => ipcRenderer.invoke('tcpwatch:startCapture', opts),

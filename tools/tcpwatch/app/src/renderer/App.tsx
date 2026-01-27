@@ -35,6 +35,11 @@ export function App() {
   const [captureStatus, setCaptureStatus] = useState<CaptureStatus | null>(null)
   const [splitProgress, setSplitProgress] = useState<CaptureSplitProgress | null>(null)
 
+  const [processInfoPid, setProcessInfoPid] = useState<number | null>(null)
+  const [processInfoResult, setProcessInfoResult] = useState<string | null>(null)
+  const [processInfoError, setProcessInfoError] = useState<string | null>(null)
+  const [processInfoLoading, setProcessInfoLoading] = useState(false)
+
   const effectiveSnapLen = useMemo(() => {
     const n = Math.trunc(Number(captureSnapLen))
     if (!Number.isFinite(n)) return 200
@@ -170,7 +175,7 @@ export function App() {
     await window.tcpwatch.stopCapture()
   }
 
-  const onRowDoubleClick = async (row: Row) => {
+  const onKillProcess = async (row: Row) => {
     if (!window.tcpwatch) return
 
     const pid = row.PID
@@ -196,6 +201,33 @@ export function App() {
       const msg = e instanceof Error ? e.message : String(e)
       setLastError(msg)
     }
+  }
+
+  const onProcessInfo = async (pid: number) => {
+    if (!window.tcpwatch) return
+    setProcessInfoPid(pid)
+    setProcessInfoResult(null)
+    setProcessInfoError(null)
+    setProcessInfoLoading(true)
+    try {
+      const res = await window.tcpwatch.processInfo(pid)
+      if ('error' in res) {
+        setProcessInfoError(res.error)
+      } else {
+        setProcessInfoResult(res.output)
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setProcessInfoError(msg)
+    } finally {
+      setProcessInfoLoading(false)
+    }
+  }
+
+  const closeProcessInfo = () => {
+    setProcessInfoPid(null)
+    setProcessInfoResult(null)
+    setProcessInfoError(null)
   }
 
   const updatedLabel = snapshot?.updated ? new Date(snapshot.updated).toLocaleString() : '—'
@@ -464,13 +496,33 @@ export function App() {
           </div>
         </div>
 
-        <ConnectionsTable rows={rows} onRowDoubleClick={onRowDoubleClick} />
+        <ConnectionsTable rows={rows} onKillProcess={onKillProcess} onProcessInfo={onProcessInfo} />
 
         <div className="footerRow">
           <div>Tip: run as admin if PID names are missing.</div>
           <div>Data source: gopsutil/sysctl</div>
         </div>
       </div>
+      )}
+
+      {processInfoPid !== null && (
+        <div className="capModalBackdrop" onClick={closeProcessInfo}>
+          <div className="capModal" onClick={(e) => e.stopPropagation()}>
+            <div className="capModalHeader">
+              <h2 className="capModalTitle">Process Info - PID {processInfoPid} (witr)</h2>
+              <button type="button" onClick={closeProcessInfo}>Close</button>
+            </div>
+            <div className="capAnalysisWrap">
+              {processInfoLoading ? (
+                <div className="capAnalysisPre">Loading...</div>
+              ) : processInfoError ? (
+                <div className="capAnalysisPre errorText">{processInfoError}</div>
+              ) : processInfoResult ? (
+                <pre className="capAnalysisPre">{processInfoResult}</pre>
+              ) : null}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
