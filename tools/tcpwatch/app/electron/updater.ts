@@ -232,43 +232,65 @@ export async function downloadAndInstallUpdate(
     // Remove the downloaded zip to save space (we only need the extracted app)
     try { fs.unlinkSync(zipPath) } catch { /* ignore */ }
 
-    // Write a shell script that will:
+    // Write a shell script to /tmp (independent of staging dir) that will:
     // 1. Wait for the current process to exit
     // 2. Replace the old .app with the new one
     // 3. Relaunch the new app
-    // 4. Clean up the staging directory
+    // 4. Clean up
     //
     // This is necessary because macOS locks files inside a running .app bundle,
     // so we cannot rename/replace it while the process is alive.
-    const scriptPath = path.join(stagingDir, 'apply-update.sh')
+    const scriptPath = path.join(os.tmpdir(), `tcpwatch-update-${Date.now()}.sh`)
+    const logPath = path.join(os.tmpdir(), 'tcpwatch-update.log')
     const pid = process.pid
-    const script = `#!/bin/bash
-# Wait for the current app process to exit (up to 30 seconds)
-for i in $(seq 1 60); do
-  if ! kill -0 ${pid} 2>/dev/null; then
-    break
-  fi
-  sleep 0.5
-done
+    const q = (s: string) => `'${s.replace(/'/g, "'\\''")}'` // shell-safe single-quoting
+    const script = [
+      '#!/bin/bash',
+      `LOG=${q(logPath)}`,
+      `echo "[$(date)] Update script started (waiting for PID ${pid})" > "$LOG"`,
+      '',
+      '# Wait for the current app process to exit (up to 30 seconds)',
+      'for i in $(seq 1 60); do',
+      `  kill -0 ${pid} 2>/dev/null || break`,
+      '  sleep 0.5',
+      'done',
+      `echo "[$(date)] Process ${pid} exited" >> "$LOG"`,
+      '',
+      `APP=${q(appBundlePath)}`,
+      `NEW=${q(newAppPath)}`,
+      `STAGING=${q(stagingDir)}`,
+      'BACKUP="${APP}.backup"',
+      '',
+      '# Remove any previous backup',
+      'rm -rf "$BACKUP"',
+      '',
+      '# Move current app to backup',
+      'if ! mv "$APP" "$BACKUP" 2>> "$LOG"; then',
+      '  echo "[$(date)] ERROR: Failed to move old app to backup" >> "$LOG"',
+      '  rm -rf "$STAGING"',
+      '  exit 1',
+      'fi',
+      'echo "[$(date)] Moved old app to backup" >> "$LOG"',
+      '',
+      '# Move new app into place',
+      'if mv "$NEW" "$APP" 2>> "$LOG"; then',
+      '  echo "[$(date)] Moved new app into place" >> "$LOG"',
+      '  rm -rf "$BACKUP"',
+      '  rm -rf "$STAGING"',
+      `  rm -f ${q(scriptPath)}`,
+      '  echo "[$(date)] Relaunching app" >> "$LOG"',
+      '  open "$APP"',
+      'else',
+      '  echo "[$(date)] ERROR: Failed to move new app, restoring backup" >> "$LOG"',
+      '  mv "$BACKUP" "$APP" 2>> "$LOG"',
+      '  rm -rf "$STAGING"',
+      `  rm -f ${q(scriptPath)}`,
+      'fi',
+    ].join('\n') + '\n'
 
-# Replace the app bundle
-BACKUP="${appBundlePath}.backup"
-rm -rf "$BACKUP"
-mv ${JSON.stringify(appBundlePath)} "$BACKUP" 2>/dev/null
-if mv ${JSON.stringify(newAppPath)} ${JSON.stringify(appBundlePath)}; then
-  # Success — remove backup and staging dir
-  rm -rf "$BACKUP"
-  rm -rf ${JSON.stringify(stagingDir)}
-  # Relaunch the app
-  open ${JSON.stringify(appBundlePath)}
-else
-  # Failed — restore backup
-  mv "$BACKUP" ${JSON.stringify(appBundlePath)} 2>/dev/null
-  rm -rf ${JSON.stringify(stagingDir)}
-fi
-`
     fs.writeFileSync(scriptPath, script, { mode: 0o755 })
     console.log(`[updater] Wrote update script to ${scriptPath}`)
+    console.log(`[updater] Log file: ${logPath}`)
 
     // Prompt the user to restart
     const restartChoice = dialog.showMessageBoxSync(
@@ -284,14 +306,18 @@ fi
     )
 
     if (restartChoice === 0) {
-      // Launch the detached update script, then quit
-      const child = spawnChild('bash', [scriptPath], {
+      // Launch the detached update script via nohup, then quit.
+      // Use 'open -a Terminal' fallback would be too visible; instead
+      // nohup + setsid (detached) ensures the script survives our exit.
+      const child = spawnChild('/bin/bash', [scriptPath], {
         detached: true,
         stdio: 'ignore',
+        env: { ...process.env, PATH: '/usr/bin:/bin:/usr/sbin:/sbin' },
       })
       child.unref()
-      console.log(`[updater] Launched update script (pid ${child.pid}), quitting app`)
-      app.exit(0)
+      console.log(`[updater] Launched update script (pid ${child.pid}), exiting in 500ms`)
+      // Give the child process time to fully start before we exit
+      setTimeout(() => app.exit(0), 500)
     }
     // If "Later", the staging dir stays around; the script can be run manually
     // or the next update check will clean it up and re-download.
