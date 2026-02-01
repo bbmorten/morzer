@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -8,6 +8,8 @@ import { reverse as dnsReverse, lookupService as dnsLookupService } from 'node:d
 import dotenv from 'dotenv'
 import { Client as McpClient } from '@modelcontextprotocol/sdk/client'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { checkForUpdate, downloadAndInstallUpdate, type UpdateCheckResult } from './updater.js'
+import { buildAppMenu } from './menu.js'
 
 type StartOptions = {
   intervalMs: number
@@ -1678,8 +1680,78 @@ async function runSnapshot(opts: StartOptions): Promise<Snapshot> {
   })
 }
 
+/* ------------------------------------------------------------------ */
+/*  Auto-update helpers                                                */
+/* ------------------------------------------------------------------ */
+
+async function silentUpdateCheck(): Promise<void> {
+  try {
+    const result = await checkForUpdate(app.getVersion())
+    if (!result.available) return
+    const { info } = result
+    const choice = dialog.showMessageBoxSync(mainWindow ? mainWindow : undefined!, {
+      type: 'info',
+      title: 'Update Available',
+      message: `tcpwatch v${info.latestVersion} is available (you have v${info.currentVersion}).`,
+      detail: info.releaseNotes
+        ? info.releaseNotes.slice(0, 500)
+        : `See release notes at ${info.releaseUrl}`,
+      buttons: ['Download & Install', 'Later'],
+      defaultId: 0,
+    })
+    if (choice === 0) {
+      await downloadAndInstallUpdate(info, mainWindow)
+    }
+  } catch (err) {
+    console.error('[updater] Silent check failed:', err)
+  }
+}
+
+async function handleManualUpdateCheck(): Promise<void> {
+  try {
+    const result = await checkForUpdate(app.getVersion())
+    if (!result.available) {
+      dialog.showMessageBoxSync(mainWindow ? mainWindow : undefined!, {
+        type: 'info',
+        title: 'No Updates',
+        message: `You are running the latest version (v${result.currentVersion}).`,
+        buttons: ['OK'],
+      })
+      return
+    }
+    const { info } = result
+    const choice = dialog.showMessageBoxSync(mainWindow ? mainWindow : undefined!, {
+      type: 'info',
+      title: 'Update Available',
+      message: `tcpwatch v${info.latestVersion} is available (you have v${info.currentVersion}).`,
+      detail: info.releaseNotes
+        ? info.releaseNotes.slice(0, 500)
+        : `See release notes at ${info.releaseUrl}`,
+      buttons: ['Download & Install', 'Later'],
+      defaultId: 0,
+    })
+    if (choice === 0) {
+      await downloadAndInstallUpdate(info, mainWindow)
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    dialog.showErrorBox('Update Check Failed', message)
+  }
+}
+
 app.whenReady().then(() => {
   createWindow()
+
+  // Set up application menu with "Check for Updates..."
+  const menu = buildAppMenu({
+    onCheckForUpdates: () => { handleManualUpdateCheck() },
+  })
+  Menu.setApplicationMenu(menu)
+
+  // Auto-check for updates 5 seconds after startup (packaged app only)
+  if (app.isPackaged) {
+    setTimeout(() => { silentUpdateCheck() }, 5000)
+  }
 
   ipcMain.handle('tcpwatch:start', async (_evt, opts: StartOptions) => {
     startChild(opts)
@@ -2090,6 +2162,21 @@ app.whenReady().then(() => {
     if (!isPcapFile(p)) throw new Error('Unsupported file type. Expected .pcap or .pcapng')
     return await runDnsAnalysisWithClaude(p)
   })
+
+  ipcMain.handle('tcpwatch:checkForUpdate', async () => {
+    const result = await checkForUpdate(app.getVersion())
+    if (result.available) {
+      return {
+        available: true,
+        currentVersion: result.info.currentVersion,
+        latestVersion: result.info.latestVersion,
+        releaseUrl: result.info.releaseUrl,
+      }
+    }
+    return { available: false, currentVersion: app.getVersion() }
+  })
+
+  ipcMain.handle('tcpwatch:getAppVersion', async () => app.getVersion())
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

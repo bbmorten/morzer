@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('tcpwatch', {
   analyzeCapture: (filePath) => ipcRenderer.invoke('tcpwatch:analyzeCapture', filePath),
   extractDns: (filePath) => ipcRenderer.invoke('tcpwatch:extractDns', filePath),
   analyzeDnsCapture: (filePath) => ipcRenderer.invoke('tcpwatch:analyzeDnsCapture', filePath),
+  checkForUpdate: () => ipcRenderer.invoke('tcpwatch:checkForUpdate'),
+  getAppVersion: () => ipcRenderer.invoke('tcpwatch:getAppVersion'),
   stop: () => ipcRenderer.invoke('tcpwatch:stop'),
   isRunning: () => ipcRenderer.invoke('tcpwatch:isRunning'),
   onSnapshot: (cb) => {
