@@ -2,7 +2,7 @@ import { app, dialog, type BrowserWindow } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import { spawnSync } from 'node:child_process'
+import { spawn as spawnChild, spawnSync } from 'node:child_process'
 import { pipeline } from 'node:stream/promises'
 import { createWriteStream } from 'node:fs'
 import { Readable } from 'node:stream'
@@ -157,9 +157,8 @@ export async function downloadAndInstallUpdate(
   }
 
   const parentDir = path.dirname(appBundlePath)
-  const appName = path.basename(appBundlePath) // "tcpwatch.app"
 
-  // Check write permission
+  // Check write permission on the parent directory
   try {
     fs.accessSync(parentDir, fs.constants.W_OK)
   } catch {
@@ -170,19 +169,20 @@ export async function downloadAndInstallUpdate(
     return
   }
 
-  // Create temp directory
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tcpwatch-update-'))
-  const zipPath = path.join(tmpDir, 'update.zip')
-  const extractDir = path.join(tmpDir, 'extracted')
+  // Create a persistent staging directory (not in /tmp which may get cleaned)
+  // We use a sibling directory next to the .app so it's on the same filesystem
+  // (required for atomic mv) and survives the app restart.
+  const stagingDir = path.join(parentDir, '.tcpwatch-update-staging')
+  if (fs.existsSync(stagingDir)) {
+    fs.rmSync(stagingDir, { recursive: true, force: true })
+  }
+  fs.mkdirSync(stagingDir, { recursive: true })
+
+  const zipPath = path.join(stagingDir, 'update.zip')
+  const extractDir = path.join(stagingDir, 'extracted')
   fs.mkdirSync(extractDir, { recursive: true })
 
   try {
-    // Download
-    const owner = parentWindow ?? undefined
-    const progressNotification = owner
-      ? undefined // Could add a progress window in the future
-      : undefined
-
     console.log(`[updater] Downloading ${info.downloadUrl}`)
     const resp = await fetch(info.downloadUrl, {
       headers: { 'User-Agent': `tcpwatch/${info.currentVersion}` },
@@ -229,59 +229,79 @@ export async function downloadAndInstallUpdate(
     }
     console.log(`[updater] Cleared quarantine on ${newAppPath}`)
 
-    // Replace the current app bundle
-    const backupPath = path.join(parentDir, `${appName}.backup`)
+    // Remove the downloaded zip to save space (we only need the extracted app)
+    try { fs.unlinkSync(zipPath) } catch { /* ignore */ }
 
-    // Clean up any previous backup
-    if (fs.existsSync(backupPath)) {
-      fs.rmSync(backupPath, { recursive: true, force: true })
-    }
+    // Write a shell script that will:
+    // 1. Wait for the current process to exit
+    // 2. Replace the old .app with the new one
+    // 3. Relaunch the new app
+    // 4. Clean up the staging directory
+    //
+    // This is necessary because macOS locks files inside a running .app bundle,
+    // so we cannot rename/replace it while the process is alive.
+    const scriptPath = path.join(stagingDir, 'apply-update.sh')
+    const pid = process.pid
+    const script = `#!/bin/bash
+# Wait for the current app process to exit (up to 30 seconds)
+for i in $(seq 1 60); do
+  if ! kill -0 ${pid} 2>/dev/null; then
+    break
+  fi
+  sleep 0.5
+done
 
-    // Backup current → move new → clean backup
-    fs.renameSync(appBundlePath, backupPath)
-    try {
-      fs.renameSync(newAppPath, appBundlePath)
-    } catch (moveErr) {
-      // Restore backup on failure
-      console.error(`[updater] Move failed, restoring backup:`, moveErr)
-      fs.renameSync(backupPath, appBundlePath)
-      throw moveErr
-    }
+# Replace the app bundle
+BACKUP="${appBundlePath}.backup"
+rm -rf "$BACKUP"
+mv ${JSON.stringify(appBundlePath)} "$BACKUP" 2>/dev/null
+if mv ${JSON.stringify(newAppPath)} ${JSON.stringify(appBundlePath)}; then
+  # Success — remove backup and staging dir
+  rm -rf "$BACKUP"
+  rm -rf ${JSON.stringify(stagingDir)}
+  # Relaunch the app
+  open ${JSON.stringify(appBundlePath)}
+else
+  # Failed — restore backup
+  mv "$BACKUP" ${JSON.stringify(appBundlePath)} 2>/dev/null
+  rm -rf ${JSON.stringify(stagingDir)}
+fi
+`
+    fs.writeFileSync(scriptPath, script, { mode: 0o755 })
+    console.log(`[updater] Wrote update script to ${scriptPath}`)
 
-    // Remove backup
-    try {
-      fs.rmSync(backupPath, { recursive: true, force: true })
-    } catch {
-      // Non-critical
-    }
-
-    console.log(`[updater] App updated to v${info.latestVersion}`)
-
-    // Prompt restart
+    // Prompt the user to restart
     const restartChoice = dialog.showMessageBoxSync(
       parentWindow ? parentWindow : undefined!,
       {
         type: 'info',
-        title: 'Update Installed',
-        message: `tcpwatch has been updated to v${info.latestVersion}.`,
-        detail: 'The application needs to restart to apply the update.',
+        title: 'Update Ready',
+        message: `tcpwatch v${info.latestVersion} has been downloaded.`,
+        detail: 'The application needs to restart to apply the update. The swap will happen automatically after quitting.',
         buttons: ['Restart Now', 'Later'],
         defaultId: 0,
       },
     )
 
     if (restartChoice === 0) {
-      app.relaunch()
+      // Launch the detached update script, then quit
+      const child = spawnChild('bash', [scriptPath], {
+        detached: true,
+        stdio: 'ignore',
+      })
+      child.unref()
+      console.log(`[updater] Launched update script (pid ${child.pid}), quitting app`)
       app.exit(0)
     }
+    // If "Later", the staging dir stays around; the script can be run manually
+    // or the next update check will clean it up and re-download.
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error(`[updater] Update failed:`, message)
     dialog.showErrorBox('Update Failed', message)
-  } finally {
-    // Clean up temp directory
+    // Clean up staging on error
     try {
-      fs.rmSync(tmpDir, { recursive: true, force: true })
+      fs.rmSync(stagingDir, { recursive: true, force: true })
     } catch {
       // Ignore cleanup errors
     }

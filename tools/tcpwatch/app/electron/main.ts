@@ -2172,18 +2172,24 @@ app.whenReady().then(() => {
     async (_evt, filter: unknown, ifaceId: unknown) => {
       const f = String(filter ?? '').trim()
       if (!f) return { valid: false, error: 'Capture filter cannot be empty' }
+
+      // Use dumpcap -f <filter> -d to validate BPF syntax without capturing.
+      // dumpcap is in the same directory as tshark.
+      const tsharkPath = resolveTsharkPath()
+      const dumpcapPath = path.join(path.dirname(tsharkPath), 'dumpcap')
+
       const iface = String(ifaceId ?? '').trim()
-      const tshark = resolveTsharkPath()
-      const args = ['-f', f, '-c', '0']
+      const args = ['-f', f, '-d']
       if (iface) args.push('-i', iface)
-      const result = spawnSync(tshark, args, { timeout: 5000, stdio: ['ignore', 'ignore', 'pipe'] })
-      if (result.status === 0 || result.status === null) {
-        return { valid: true }
+
+      const result = spawnSync(dumpcapPath, args, { timeout: 5000, encoding: 'utf8' })
+      const output = (result.stderr ?? '') + (result.stdout ?? '')
+      if (output.includes('Invalid capture filter')) {
+        // Extract the parenthetical reason, e.g. "(can't parse filter expression: syntax error)"
+        const reason = output.match(/\(([^)]+)\)/)?.[1]
+        return { valid: false, error: reason || 'Invalid capture filter' }
       }
-      const stderr = result.stderr?.toString('utf8').trim() ?? ''
-      // tshark prints the error reason after the last colon in lines mentioning the filter
-      const errorLine = stderr.split('\n').find((l: string) => l.includes('Invalid capture filter') || l.includes('syntax error'))
-      return { valid: false, error: errorLine || stderr || 'Invalid capture filter' }
+      return { valid: true }
     },
   )
 
