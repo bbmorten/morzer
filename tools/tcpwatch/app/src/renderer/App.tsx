@@ -31,7 +31,7 @@ export function App() {
   const [captureIfaces, setCaptureIfaces] = useState<CaptureInterface[]>([])
   const [captureIfaceId, setCaptureIfaceId] = useState<string>('')
   const [captureDurationSec, setCaptureDurationSec] = useState<number>(300)
-  const [captureSnapLen, setCaptureSnapLen] = useState<number>(200)
+  const [captureSnapLen, setCaptureSnapLen] = useState<number>(65535)
   const [captureFilter, setCaptureFilter] = useState<string>('tcp')
   const [captureFilterError, setCaptureFilterError] = useState<string | null>(null)
   const [captureStatus, setCaptureStatus] = useState<CaptureStatus | null>(null)
@@ -44,7 +44,7 @@ export function App() {
 
   const effectiveSnapLen = useMemo(() => {
     const n = Math.trunc(Number(captureSnapLen))
-    if (!Number.isFinite(n)) return 200
+    if (!Number.isFinite(n)) return 65535
     return Math.max(0, Math.min(262144, n))
   }, [captureSnapLen])
 
