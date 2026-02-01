@@ -173,6 +173,8 @@ th {
 .capGridFrom4 { grid-column: 4 / -1; }
 .capFilterError input { border-color: var(--danger); }
 .capFilterHint { color: var(--danger); margin-top: 2px; }
+.capFileLink { color: var(--accent); text-decoration: none; cursor: pointer; }
+.capFileLink:hover { text-decoration: underline; }
 
 .capRowFlex {
   display: flex;

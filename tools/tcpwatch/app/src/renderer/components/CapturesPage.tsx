@@ -361,7 +361,7 @@ export function CapturesPage({
 
       {index ? (
         <div className="footerRow">
-          <div>Capture: {index.captureFile}</div>
+          <div>Capture: <a href="#" className="capFileLink" onClick={(e) => { e.preventDefault(); window.tcpwatch?.openInWireshark(index.captureFile) }}>{index.captureFile}</a></div>
           <div>Created: {new Date(index.createdAt).toLocaleString()}</div>
         </div>
       ) : null}

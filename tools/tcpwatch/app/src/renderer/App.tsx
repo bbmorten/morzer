@@ -508,7 +508,7 @@ export function App() {
 
           {captureStatus?.filePath ? (
             <div className="capGridAll">
-              <div className="sub">Capture file: {captureStatus.filePath}</div>
+              <div className="sub">Capture file: <a href="#" className="capFileLink" onClick={(e) => { e.preventDefault(); window.tcpwatch?.openInWireshark(captureStatus.filePath!) }}>{captureStatus.filePath}</a></div>
             </div>
           ) : null}
           {captureStatus?.splitDir ? (
