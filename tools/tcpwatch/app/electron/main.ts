@@ -45,6 +45,7 @@ type CaptureStatus = {
   startedAt?: string
   durationSeconds?: number
   port?: number
+  captureFilter?: string
   splitting?: boolean
   splitDir?: string
   snapLen?: number
@@ -1888,7 +1889,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle(
     'tcpwatch:startCapture',
-    async (_evt, opts: { dumpDir: string; ifaceId: string; durationSeconds: number; port?: unknown; snapLen?: unknown }) => {
+    async (_evt, opts: { dumpDir: string; ifaceId: string; durationSeconds: number; port?: unknown; snapLen?: unknown; captureFilter?: unknown }) => {
       if (captureChild) throw new Error('Capture already running')
 
       const tshark = resolveTsharkPath()
@@ -1912,7 +1913,9 @@ app.whenReady().then(() => {
       const ts = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '')
       const filePath = path.join(opts.dumpDir, `tcpwatch-capture-${ts}.pcapng`)
 
-      const captureFilter = port ? `tcp port ${port}` : 'tcp'
+      // Use the user-supplied capture filter if provided, otherwise fall back to port-based or plain tcp
+      const userFilter = typeof opts.captureFilter === 'string' ? opts.captureFilter.trim() : ''
+      const captureFilter = userFilter || (port ? `tcp port ${port}` : 'tcp')
       const args = ['-i', ifaceId, '-n', '-f', captureFilter, '-a', `duration:${durationSeconds}`, '-w', filePath]
       const proc = spawn(tshark, args, { stdio: ['ignore', 'ignore', 'pipe'] })
       captureChild = proc
@@ -1924,6 +1927,7 @@ app.whenReady().then(() => {
         ifaceId,
         durationSeconds,
         port,
+        captureFilter,
         snapLen,
         startedAt: new Date().toISOString(),
         splitting: false,
@@ -2162,6 +2166,26 @@ app.whenReady().then(() => {
     if (!isPcapFile(p)) throw new Error('Unsupported file type. Expected .pcap or .pcapng')
     return await runDnsAnalysisWithClaude(p)
   })
+
+  ipcMain.handle(
+    'tcpwatch:validateCaptureFilter',
+    async (_evt, filter: unknown, ifaceId: unknown) => {
+      const f = String(filter ?? '').trim()
+      if (!f) return { valid: false, error: 'Capture filter cannot be empty' }
+      const iface = String(ifaceId ?? '').trim()
+      const tshark = resolveTsharkPath()
+      const args = ['-f', f, '-c', '0']
+      if (iface) args.push('-i', iface)
+      const result = spawnSync(tshark, args, { timeout: 5000, stdio: ['ignore', 'ignore', 'pipe'] })
+      if (result.status === 0 || result.status === null) {
+        return { valid: true }
+      }
+      const stderr = result.stderr?.toString('utf8').trim() ?? ''
+      // tshark prints the error reason after the last colon in lines mentioning the filter
+      const errorLine = stderr.split('\n').find((l: string) => l.includes('Invalid capture filter') || l.includes('syntax error'))
+      return { valid: false, error: errorLine || stderr || 'Invalid capture filter' }
+    },
+  )
 
   ipcMain.handle('tcpwatch:checkForUpdate', async () => {
     const result = await checkForUpdate(app.getVersion())

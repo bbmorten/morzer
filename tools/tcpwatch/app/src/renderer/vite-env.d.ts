@@ -20,6 +20,7 @@ declare global {
       analyzeCapture: (filePath: string) => Promise<import('./types').PacketAnalysisResult>
       extractDns: (filePath: string) => Promise<import('./types').DnsExtractIndex>
       analyzeDnsCapture: (filePath: string) => Promise<import('./types').PacketAnalysisResult>
+      validateCaptureFilter: (filter: string, ifaceId: string) => Promise<{ valid: boolean; error?: string }>
       checkForUpdate: () => Promise<{ available: boolean; currentVersion: string; latestVersion?: string; releaseUrl?: string }>
       getAppVersion: () => Promise<string>
       stop: () => Promise<void>

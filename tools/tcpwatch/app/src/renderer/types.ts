@@ -46,6 +46,7 @@ export type CaptureStartOptions = {
   durationSeconds: number
   port?: number
   snapLen?: number
+  captureFilter?: string
 }
 
 export type CaptureSplitProgress = {

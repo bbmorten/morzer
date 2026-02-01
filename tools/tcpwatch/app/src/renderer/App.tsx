@@ -32,6 +32,8 @@ export function App() {
   const [captureIfaceId, setCaptureIfaceId] = useState<string>('')
   const [captureDurationSec, setCaptureDurationSec] = useState<number>(300)
   const [captureSnapLen, setCaptureSnapLen] = useState<number>(200)
+  const [captureFilter, setCaptureFilter] = useState<string>('tcp')
+  const [captureFilterError, setCaptureFilterError] = useState<string | null>(null)
   const [captureStatus, setCaptureStatus] = useState<CaptureStatus | null>(null)
   const [splitProgress, setSplitProgress] = useState<CaptureSplitProgress | null>(null)
 
@@ -153,6 +155,22 @@ export function App() {
     }
   }
 
+  const onValidateCaptureFilter = async () => {
+    if (!window.tcpwatch) return
+    const f = captureFilter.trim()
+    if (!f) {
+      setCaptureFilterError('Capture filter cannot be empty')
+      return
+    }
+    try {
+      const result = await window.tcpwatch.validateCaptureFilter(f, captureIfaceId)
+      setCaptureFilterError(result.valid ? null : (result.error ?? 'Invalid capture filter'))
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setCaptureFilterError(msg)
+    }
+  }
+
   const onStartCapture = async () => {
     if (!window.tcpwatch) return
     setLastError(null)
@@ -164,7 +182,8 @@ export function App() {
       ifaceId: captureIfaceId,
       durationSeconds: duration,
       port: typeof startOptions.port === 'number' && Number.isFinite(startOptions.port) ? startOptions.port : undefined,
-      snapLen: effectiveSnapLen
+      snapLen: effectiveSnapLen,
+      captureFilter: captureFilter.trim() || undefined
     })
     setCaptureStatus(status)
   }
@@ -450,14 +469,27 @@ export function App() {
               title="Max bytes per packet written to each split tcp-stream-*.pcapng (0 disables truncation). Default 200."
             />
           </div>
+          <div className={`capGridSpan3${captureFilterError ? ' capFilterError' : ''}`}>
+            <label htmlFor="captureFilter">Capture filter (BPF)</label>
+            <input
+              id="captureFilter"
+              type="text"
+              value={captureFilter}
+              onChange={(e) => { setCaptureFilter(e.target.value); setCaptureFilterError(null) }}
+              onBlur={onValidateCaptureFilter}
+              placeholder="e.g. tcp, tcp port 443, host 10.0.0.1"
+              title="BPF capture filter passed to tshark -f. Validated on blur."
+            />
+            {captureFilterError && <div className="sub capFilterHint">{captureFilterError}</div>}
+          </div>
           <div>
             <label>Capture</label>
             {!captureStatus?.running ? (
               <button
                 className="primary"
                 onClick={onStartCapture}
-                disabled={!dumpDir.trim() || !captureIfaceId || !running}
-                title={!running ? 'Start tcpwatch streaming first' : undefined}
+                disabled={!dumpDir.trim() || !captureIfaceId || !running || !!captureFilterError}
+                title={!running ? 'Start tcpwatch streaming first' : captureFilterError ? 'Fix capture filter first' : undefined}
               >
                 Start capture
               </button>
