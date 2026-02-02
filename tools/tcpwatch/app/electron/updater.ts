@@ -303,7 +303,7 @@ export async function downloadAndInstallUpdate(
       '  fi',
       'else',
       '  echo "[$(date)] Normal mv failed, requesting admin privileges via osascript..." >> "$LOG"',
-      '  if osascript -e "do shell script \\"/bin/bash $SWAP_SCRIPT\\" with administrator privileges" 2>> "$LOG"; then',
+      '  if osascript -e "do shell script \\"/bin/bash $SWAP_SCRIPT\\" with prompt \\"tcpwatch needs administrator privileges to replace the current application bundle with the downloaded update.\\" with administrator privileges" 2>> "$LOG"; then',
       '    echo "[$(date)] Admin swap succeeded" >> "$LOG"',
       `    rm -f ${q(scriptPath)} "$SWAP_SCRIPT"`,
       '    echo "[$(date)] Relaunching app" >> "$LOG"',
