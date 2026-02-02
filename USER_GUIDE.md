@@ -82,7 +82,7 @@ The app can start a short packet capture using `tshark` (from Wireshark) and the
    - Choose a **Dump folder**
    - Pick an **Interface**
    - Set **Max duration** (1–300 seconds)
-  - Set **Snaplen (bytes)** (default **200**; set **0** to disable truncation)
+  - Set **Snaplen (bytes)** (default **65535**; set **0** to disable truncation)
   - Optional: set the **Port** filter (under Filters) to scope capture to a single port.
 3. Click **Start capture**.
 4. Click **Stop capture** to stop early (otherwise it stops automatically at the max duration).
@@ -101,7 +101,7 @@ The `index.json` also includes **best-effort metadata** per stream (source/desti
 Notes:
 
 - Reverse lookups are inherently best-effort: many IPs have no PTR record, and local devices may only resolve via mDNS/Bonjour.
-- If you want to disable reverse lookups (faster splitting), run the app with `TCPWATCH_RDNS=0`.
+- If you want to disable reverse lookups (faster splitting), toggle it off in **Settings** or run the app with `TCPWATCH_RDNS=0`.
 - Tuning knobs (optional):
   - `TCPWATCH_RDNS_TIMEOUT_MS` (default `2000`)
   - `TCPWATCH_RDNS_CONCURRENCY` (default `8`)
@@ -164,24 +164,35 @@ Prerequisites:
 - A configured `mcpcap` MCP server.
 - An Anthropic API key.
 
-Config locations:
+Configuration:
 
-- **Packaged app**: put config under `~/Library/Application Support/tcpwatch/`
-  - `.env` with `ANTHROPIC_API_KEY=...`
-  - `.mcp.json` with an `mcpcap` server entry (or set `TCPWATCH_MCPCAP_BIN`)
-- **Dev / repo checkout**: use repo root files:
-  - `.env`
-  - `.mcp.json`
-
-To create `.env`:
-
-- Copy `.env.example` → `.env`
-- Set `ANTHROPIC_API_KEY=...`
+- Open **Settings** (Cmd+, or app menu → Settings...) and enter your Anthropic API key. Settings are stored in `config.json` and persist across restarts.
+- Configure `mcpcap` via `~/Library/Application Support/tcpwatch/.mcp.json` (or set the mcpcap binary path in Settings).
+- Existing `.env` files are automatically migrated to `config.json` on first launch.
 
 Notes:
 
 - The analysis runs locally in the Electron main process and may take a while on large files.
-- If the API key is missing, you’ll see an error explaining how to set it.
+- If the API key is missing, you'll see an error directing you to Settings.
+
+## Settings
+
+Open Settings via **Cmd+,** or the app menu (**tcpwatch → Settings...**).
+
+Available settings:
+
+- **Anthropic API Key**: required for Claude-powered analysis features.
+- **Claude Model**: override the model used for analysis (leave empty for auto-detect).
+- **Binary paths**: custom paths for `mcpcap`, `tshark`, `editcap`, `wireshark`, and `tcpwatch` binaries. Leave empty to use auto-detected defaults.
+- **Reverse DNS**: enable or disable reverse DNS lookups during stream splitting.
+
+Settings are stored in `~/Library/Application Support/tcpwatch/config.json` (packaged app) or `config.json` in the repo root (dev mode).
+
+Precedence (highest to lowest):
+
+1. Shell environment variables
+2. `config.json` values
+3. `.env` file values (legacy, auto-migrated on first launch)
 
 ## Filters
 

@@ -9,6 +9,7 @@ export function SettingsPage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [showApiKey, setShowApiKey] = useState(false)
+  const [configPath, setConfigPath] = useState<string | null>(null)
 
   useEffect(() => {
     window.tcpwatch
@@ -18,6 +19,7 @@ export function SettingsPage() {
         setDraft(cfg)
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+    window.tcpwatch.getConfigPath().then(setConfigPath).catch(() => {})
   }, [])
 
   const updateField = <K extends keyof AppConfig>(key: K, value: AppConfig[K]) => {
@@ -61,129 +63,150 @@ export function SettingsPage() {
     )
   }
 
+  // Build the JSON preview from the saved config (not draft)
+  const configJson = config ? JSON.stringify(config, null, 2) : ''
+
   return (
-    <div className="panel">
-      <div className="controls">
-        <div className="settingsSection">
-          <h3 className="settingsHeading">API</h3>
-          <div className="settingsRow">
-            <label htmlFor="apiKey">Anthropic API Key</label>
-            <div className="settingsApiKeyWrap">
+    <div className="panel settingsPanel">
+      <div className="settingsGrid">
+        {/* Left column: API + Network */}
+        <div>
+          <div className="settingsSection">
+            <h3 className="settingsHeading">API</h3>
+            <div className="settingsRow">
+              <label htmlFor="apiKey">Anthropic API Key</label>
+              <div className="settingsApiKeyWrap">
+                <input
+                  id="apiKey"
+                  type={showApiKey ? 'text' : 'password'}
+                  value={draft.anthropicApiKey}
+                  onChange={(e) => updateField('anthropicApiKey', e.target.value)}
+                  placeholder="sk-ant-..."
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <button type="button" onClick={() => setShowApiKey(!showApiKey)} title={showApiKey ? 'Hide' : 'Show'}>
+                  {showApiKey ? 'Hide' : 'Show'}
+                </button>
+              </div>
+            </div>
+            <div className="settingsRow">
+              <label htmlFor="claudeModel">Claude Model</label>
               <input
-                id="apiKey"
-                type={showApiKey ? 'text' : 'password'}
-                value={draft.anthropicApiKey}
-                onChange={(e) => updateField('anthropicApiKey', e.target.value)}
-                placeholder="sk-ant-..."
-                autoComplete="off"
+                id="claudeModel"
+                type="text"
+                value={draft.claudeModel}
+                onChange={(e) => updateField('claudeModel', e.target.value)}
+                placeholder="Auto-detect (leave empty)"
                 spellCheck={false}
               />
-              <button type="button" onClick={() => setShowApiKey(!showApiKey)} title={showApiKey ? 'Hide' : 'Show'}>
-                {showApiKey ? 'Hide' : 'Show'}
-              </button>
             </div>
           </div>
-          <div className="settingsRow">
-            <label htmlFor="claudeModel">Claude Model</label>
-            <input
-              id="claudeModel"
-              type="text"
-              value={draft.claudeModel}
-              onChange={(e) => updateField('claudeModel', e.target.value)}
-              placeholder="Auto-detect (leave empty)"
-              spellCheck={false}
-            />
+
+          <div className="settingsSection">
+            <h3 className="settingsHeading">Network</h3>
+            <div className="settingsRow">
+              <label className="settingsCheckLabel">
+                <input
+                  type="checkbox"
+                  checked={draft.reverseDns}
+                  onChange={(e) => updateField('reverseDns', e.target.checked)}
+                />{' '}
+                Enable Reverse DNS Lookups
+              </label>
+            </div>
           </div>
         </div>
 
-        <div className="settingsSection">
-          <h3 className="settingsHeading">Binaries</h3>
-          <div className="settingsRow">
-            <label htmlFor="mcpcapBin">mcpcap Binary</label>
-            <input
-              id="mcpcapBin"
-              type="text"
-              value={draft.mcpcapBin}
-              onChange={(e) => updateField('mcpcapBin', e.target.value)}
-              placeholder="Auto-detect"
-              spellCheck={false}
-            />
-          </div>
-          <div className="settingsRow">
-            <label htmlFor="tsharkBin">tshark Binary</label>
-            <input
-              id="tsharkBin"
-              type="text"
-              value={draft.tsharkBin}
-              onChange={(e) => updateField('tsharkBin', e.target.value)}
-              placeholder="Auto-detect"
-              spellCheck={false}
-            />
-          </div>
-          <div className="settingsRow">
-            <label htmlFor="editcapBin">editcap Binary</label>
-            <input
-              id="editcapBin"
-              type="text"
-              value={draft.editcapBin}
-              onChange={(e) => updateField('editcapBin', e.target.value)}
-              placeholder="Auto-detect"
-              spellCheck={false}
-            />
-          </div>
-          <div className="settingsRow">
-            <label htmlFor="wiresharkBin">Wireshark Binary</label>
-            <input
-              id="wiresharkBin"
-              type="text"
-              value={draft.wiresharkBin}
-              onChange={(e) => updateField('wiresharkBin', e.target.value)}
-              placeholder="Auto-detect"
-              spellCheck={false}
-            />
-          </div>
-          <div className="settingsRow">
-            <label htmlFor="tcpwatchBin">tcpwatch Binary</label>
-            <input
-              id="tcpwatchBin"
-              type="text"
-              value={draft.tcpwatchBin}
-              onChange={(e) => updateField('tcpwatchBin', e.target.value)}
-              placeholder="Auto-detect"
-              spellCheck={false}
-            />
-          </div>
-        </div>
-
-        <div className="settingsSection">
-          <h3 className="settingsHeading">Network</h3>
-          <div className="settingsRow">
-            <label>
+        {/* Right column: Binaries */}
+        <div>
+          <div className="settingsSection">
+            <h3 className="settingsHeading">Binaries</h3>
+            <div className="settingsRow">
+              <label htmlFor="mcpcapBin">mcpcap</label>
               <input
-                type="checkbox"
-                checked={draft.reverseDns}
-                onChange={(e) => updateField('reverseDns', e.target.checked)}
-              />{' '}
-              Enable Reverse DNS Lookups
-            </label>
+                id="mcpcapBin"
+                type="text"
+                value={draft.mcpcapBin}
+                onChange={(e) => updateField('mcpcapBin', e.target.value)}
+                placeholder="Auto-detect"
+                spellCheck={false}
+              />
+            </div>
+            <div className="settingsRow">
+              <label htmlFor="tsharkBin">tshark</label>
+              <input
+                id="tsharkBin"
+                type="text"
+                value={draft.tsharkBin}
+                onChange={(e) => updateField('tsharkBin', e.target.value)}
+                placeholder="Auto-detect"
+                spellCheck={false}
+              />
+            </div>
+            <div className="settingsRow">
+              <label htmlFor="editcapBin">editcap</label>
+              <input
+                id="editcapBin"
+                type="text"
+                value={draft.editcapBin}
+                onChange={(e) => updateField('editcapBin', e.target.value)}
+                placeholder="Auto-detect"
+                spellCheck={false}
+              />
+            </div>
+            <div className="settingsRow">
+              <label htmlFor="wiresharkBin">Wireshark</label>
+              <input
+                id="wiresharkBin"
+                type="text"
+                value={draft.wiresharkBin}
+                onChange={(e) => updateField('wiresharkBin', e.target.value)}
+                placeholder="Auto-detect"
+                spellCheck={false}
+              />
+            </div>
+            <div className="settingsRow">
+              <label htmlFor="tcpwatchBin">tcpwatch</label>
+              <input
+                id="tcpwatchBin"
+                type="text"
+                value={draft.tcpwatchBin}
+                onChange={(e) => updateField('tcpwatchBin', e.target.value)}
+                placeholder="Auto-detect"
+                spellCheck={false}
+              />
+            </div>
           </div>
-        </div>
-
-        <div className="settingsActions">
-          <button className="primary" onClick={onSave} disabled={!dirty || saving}>
-            {saving ? 'Saving...' : 'Save'}
-          </button>
-          <button onClick={onReset} disabled={!dirty}>
-            Reset
-          </button>
-        </div>
-
-        {error ? <div className="errorText">{error}</div> : null}
-        {success ? <div className="settingsSuccess">{success}</div> : null}
-        <div className="settingsNote">
-          Empty fields use auto-detected defaults. Environment variables override config file values.
         </div>
       </div>
+
+      {/* Actions row */}
+      <div className="settingsActions">
+        <button type="button" className="primary" onClick={onSave} disabled={!dirty || saving}>
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+        <button type="button" onClick={onReset} disabled={!dirty}>
+          Reset
+        </button>
+      </div>
+
+      {error ? <div className="errorText">{error}</div> : null}
+      {success ? <div className="settingsSuccess">{success}</div> : null}
+      <div className="settingsNote">
+        Empty fields use auto-detected defaults. Environment variables override config file values.
+      </div>
+
+      {/* Config file info */}
+      {configPath ? (
+        <details className="settingsConfigDetails">
+          <summary>
+            <span className="settingsConfigLabel">Config file:</span>{' '}
+            <code className="settingsConfigPath">{configPath}</code>
+          </summary>
+          <pre className="settingsConfigPre">{configJson}</pre>
+        </details>
+      ) : null}
     </div>
   )
 }

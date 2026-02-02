@@ -31,6 +31,7 @@ declare global {
       onCaptureLog: (cb: (payload: { message: string }) => void) => () => void
       onCaptureSplitProgress: (cb: (p: import('./types').CaptureSplitProgress) => void) => () => void
       getSettings: () => Promise<import('./types').AppConfig>
+      getConfigPath: () => Promise<string>
       saveSettings: (settings: import('./types').AppConfig) => Promise<import('./types').AppConfig>
       onNavigateToSettings: (cb: () => void) => () => void
     }

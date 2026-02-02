@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('tcpwatch', {
     return () => ipcRenderer.removeListener('tcpwatch:captureSplitProgress', handler)
   },
   getSettings: () => ipcRenderer.invoke('tcpwatch:getSettings'),
+  getConfigPath: () => ipcRenderer.invoke('tcpwatch:getConfigPath'),
   saveSettings: (settings) => ipcRenderer.invoke('tcpwatch:saveSettings', settings),
   onNavigateToSettings: (cb) => {
     const handler = () => cb()

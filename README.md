@@ -19,7 +19,7 @@ If macOS blocks the app (unsigned builds), use Finder → right‑click `tcpwatc
 - Click **Start** to stream updates; change filters while running to apply instantly.
 - Double‑click a row to terminate that row’s PID (after confirmation).
 - Use **Capture (tshark)** to record traffic and split by connection; if **Port** is set, the capture is limited to `tcp port <port>`.
-- Snaplen: stream files are truncated to **200 bytes/packet** by default when splitting; set **0** to disable truncation.
+- Snaplen: stream files are truncated to **65535 bytes/packet** by default when splitting; set **0** to disable truncation.
 - In **Captures**, each stream includes a human-friendly description (endpoints + best-effort reverse DNS).
 - In **Captures**, each stream shows packet count and file size.
 - In **Captures**, use **Search (Description)** to find streams by IP or FQDN.
@@ -29,7 +29,7 @@ If macOS blocks the app (unsigned builds), use Finder → right‑click `tcpwatc
 - You can also import any `.pcap`/`.pcapng` file from **Captures** (auto-split + generate `index.json`).
 - You can drag & drop a `.pcap`/`.pcapng` onto the Captures page to import.
 
-Reverse lookups are best-effort (DNS/mDNS dependent). You can disable them with `TCPWATCH_RDNS=0`.
+Reverse lookups are best-effort (DNS/mDNS dependent). You can disable them in **Settings** or with `TCPWATCH_RDNS=0`.
 
 For details (filters, troubleshooting, permissions), see `USER_GUIDE.md`.
 
@@ -38,14 +38,14 @@ For details (filters, troubleshooting, permissions), see `USER_GUIDE.md`.
 - Node.js + npm
 - A built `tcpwatch` binary at `tools/tcpwatch/tcpwatch`
 - Wireshark installed (provides `tshark` and `editcap`) for capture/splitting, snaplen truncation, and Expert Information analysis
-- For **Analyze**: an Anthropic API key (`ANTHROPIC_API_KEY`) and `mcpcap` available via `.mcp.json` (or `TCPWATCH_MCPCAP_BIN` override). See `.env.example`.
+- For **Analyze**: an Anthropic API key and `mcpcap` available via `.mcp.json` (or `TCPWATCH_MCPCAP_BIN` override).
 
 Packaged app notes (Analyze):
 
 - The prompt is bundled into the app at `Contents/Resources/prompts/packet-analysis.md`.
-- You can configure:
-	- `ANTHROPIC_API_KEY` via `~/Library/Application Support/tcpwatch/.env`
-	- `mcpcap` via `~/Library/Application Support/tcpwatch/.mcp.json` (or `TCPWATCH_MCPCAP_BIN`)
+- Configure the API key and binary paths via **Settings** (Cmd+,) — stored in `~/Library/Application Support/tcpwatch/config.json`.
+- Existing `.env` files are automatically migrated to `config.json` on first launch.
+- `mcpcap` via `~/Library/Application Support/tcpwatch/.mcp.json` (or `TCPWATCH_MCPCAP_BIN` / Settings)
 
 Build the binary:
 

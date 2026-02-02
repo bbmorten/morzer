@@ -32,6 +32,7 @@ macOS Electron application for TCP connection monitoring with features:
 - DNS/mDNS/LLMNR extraction and analysis
 - Process info via `witr -p <pid>` integration
 - Claude AI-powered packet analysis via MCP
+- In-app Settings page with JSON config persistence
 
 ### Installation
 
@@ -58,6 +59,7 @@ npm run pack          # Package for distribution (zip + pkg)
 |------|---------|
 | `package.json` | Version, dependencies, electron-builder config |
 | `electron/main.ts` | Electron main process, all IPC handlers |
+| `electron/config.ts` | JSON config read/write/migrate, env precedence |
 | `electron/preload.cjs` | IPC bridge (CommonJS for compatibility) |
 | `src/renderer/vite-env.d.ts` | TypeScript types for window.tcpwatch API |
 | `src/renderer/types.ts` | Shared type definitions |
@@ -94,7 +96,16 @@ Create a new release for tcpwatch-app:
 
 ## Configuration
 
-Environment variables (set in `~/Library/Application Support/tcpwatch/.env`):
+Settings are managed via the in-app **Settings** page (Cmd+, or app menu) and stored in `config.json`:
+- **Packaged app**: `~/Library/Application Support/tcpwatch/config.json`
+- **Dev mode**: `config.json` in the repo root (gitignored)
+
+Precedence (highest → lowest):
+1. Shell environment variables
+2. `config.json` values
+3. `.env` file values (legacy, auto-migrated on first launch)
+
+Environment variables (can also be set via Settings):
 - `ANTHROPIC_API_KEY` - Required for Claude analysis
 - `TCPWATCH_CLAUDE_MODEL` - Model for analysis (default: claude-sonnet-4-20250514)
 - `TCPWATCH_MCPCAP_BIN` - Path to mcpcap binary

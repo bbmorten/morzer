@@ -10,7 +10,7 @@ import { Client as McpClient } from '@modelcontextprotocol/sdk/client'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { checkForUpdate, downloadAndInstallUpdate, type UpdateCheckResult } from './updater.js'
 import { buildAppMenu } from './menu.js'
-import { loadConfig, saveConfig, getConfig, applyConfigToEnv, migrateFromDotenv, type AppConfig } from './config.js'
+import { loadConfig, saveConfig, getConfig, getConfigPath, applyConfigToEnv, migrateFromDotenv, type AppConfig } from './config.js'
 
 type StartOptions = {
   intervalMs: number
@@ -2213,6 +2213,7 @@ app.whenReady().then(() => {
   ipcMain.handle('tcpwatch:getAppVersion', async () => app.getVersion())
 
   ipcMain.handle('tcpwatch:getSettings', async () => getConfig())
+  ipcMain.handle('tcpwatch:getConfigPath', async () => getConfigPath())
 
   ipcMain.handle('tcpwatch:saveSettings', async (_evt, settings: AppConfig) => {
     saveConfig(settings)

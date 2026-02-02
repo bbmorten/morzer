@@ -456,10 +456,17 @@ th {
 }
 
 /* Settings page */
-.settingsSection { margin-bottom: 16px; }
-.settingsHeading { margin: 0 0 8px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.settingsPanel { padding: 16px; }
+.settingsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+.settingsSection { margin-bottom: 18px; }
+.settingsHeading { margin: 0 0 10px; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
 .settingsRow { margin-bottom: 10px; }
 .settingsRow label { display: block; margin-bottom: 4px; font-size: 12px; color: var(--muted); }
+.settingsCheckLabel { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .settingsRow input[type='text'],
 .settingsRow input[type='password'] {
   width: 100%;
@@ -473,9 +480,42 @@ th {
 }
 .settingsApiKeyWrap { display: flex; gap: 8px; align-items: center; }
 .settingsApiKeyWrap input { flex: 1; }
-.settingsActions { display: flex; gap: 8px; margin-top: 16px; margin-bottom: 8px; }
+.settingsActions { display: flex; gap: 8px; margin-top: 4px; margin-bottom: 8px; }
 .settingsSuccess { color: var(--ok); font-size: 12px; margin-top: 4px; }
 .settingsNote { color: var(--muted); font-size: 11px; margin-top: 8px; }
+.settingsConfigDetails {
+  margin-top: 14px;
+  border: 1px solid color-mix(in srgb, var(--border), transparent 40%);
+  border-radius: 12px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--panel), transparent 20%);
+}
+.settingsConfigDetails > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  list-style: disclosure-closed;
+}
+.settingsConfigDetails[open] > summary { list-style: disclosure-open; }
+.settingsConfigLabel { color: var(--muted); }
+.settingsConfigPath {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  color: var(--text);
+}
+.settingsConfigPre {
+  margin: 8px 0 0;
+  white-space: pre;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+@media (max-width: 700px) {
+  .settingsGrid { grid-template-columns: 1fr; }
+}
 
 @media (max-width: 900px) {
   .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
