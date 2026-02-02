@@ -1,5 +1,4 @@
 # Configure one or more funding platforms
 # Replace placeholders with your org/user handles
-github: [your-org, your-username]
-open_collective: your-collective
-custom: ["https://buymeacoffee.com/your-page"]
+github: [Morten, bbmorten]
+custom: ["https://buymeacoffee.com/bbmorten"]
