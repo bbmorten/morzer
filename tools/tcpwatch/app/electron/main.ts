@@ -10,6 +10,7 @@ import { Client as McpClient } from '@modelcontextprotocol/sdk/client'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { checkForUpdate, downloadAndInstallUpdate, type UpdateCheckResult } from './updater.js'
 import { buildAppMenu } from './menu.js'
+import { loadConfig, saveConfig, getConfig, applyConfigToEnv, migrateFromDotenv, type AppConfig } from './config.js'
 
 type StartOptions = {
   intervalMs: number
@@ -487,10 +488,7 @@ type AnthropicMessage = {
 function getAnthropicApiKey(): string {
   const key = String(process.env.ANTHROPIC_API_KEY ?? '').trim()
   if (!key) {
-    const hint = app.isPackaged
-      ? `Create ${path.join(app.getPath('userData'), '.env')} with ANTHROPIC_API_KEY=...`
-      : 'Create a .env at repo root with ANTHROPIC_API_KEY=...'
-    throw new Error(`Missing ANTHROPIC_API_KEY. ${hint}`)
+    throw new Error('Missing Anthropic API key. Go to Settings to configure it.')
   }
   return key
 }
@@ -1741,11 +1739,17 @@ async function handleManualUpdateCheck(): Promise<void> {
 }
 
 app.whenReady().then(() => {
+  // Migrate .env to config.json if needed (one-time), then load config
+  migrateFromDotenv()
+  const appConfig = loadConfig()
+  applyConfigToEnv(appConfig)
+
   createWindow()
 
   // Set up application menu with "Check for Updates..."
   const menu = buildAppMenu({
     onCheckForUpdates: () => { handleManualUpdateCheck() },
+    onOpenSettings: () => { mainWindow?.webContents.send('tcpwatch:navigateToSettings') },
   })
   Menu.setApplicationMenu(menu)
 
@@ -2207,6 +2211,21 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('tcpwatch:getAppVersion', async () => app.getVersion())
+
+  ipcMain.handle('tcpwatch:getSettings', async () => getConfig())
+
+  ipcMain.handle('tcpwatch:saveSettings', async (_evt, settings: AppConfig) => {
+    saveConfig(settings)
+    // Re-apply to process.env so changes take effect immediately
+    // Clear env vars first so new values from config are applied
+    for (const envVar of ['ANTHROPIC_API_KEY', 'TCPWATCH_CLAUDE_MODEL', 'TCPWATCH_MCPCAP_BIN', 'TSHARK_BIN', 'EDITCAP_BIN', 'WIRESHARK_BIN', 'TCPWATCH_BIN', 'TCPWATCH_RDNS']) {
+      delete process.env[envVar]
+    }
+    applyConfigToEnv(settings)
+    // Reset cached auto-model so it re-detects on next use
+    cachedAutoModel = null
+    return getConfig()
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

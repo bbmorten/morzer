@@ -4,10 +4,11 @@ import { ConnectionsTable } from './components/ConnectionsTable'
 import { CapturesPage } from './components/CapturesPage'
 import { DnsPage } from './components/DnsPage'
 import { PacketAnalysisPage } from './components/PacketAnalysisPage'
+import { SettingsPage } from './components/SettingsPage'
 import type { PacketAnalysisResult } from './types'
 
 export function App() {
-  const [page, setPage] = useState<'connections' | 'captures' | 'dns' | 'analysis'>('connections')
+  const [page, setPage] = useState<'connections' | 'captures' | 'dns' | 'analysis' | 'settings'>('connections')
   const [running, setRunning] = useState(false)
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [lastError, setLastError] = useState<string | null>(null)
@@ -61,6 +62,7 @@ export function App() {
     const offErr = window.tcpwatch.onError((e) => setLastError(e.message))
     const offCapStatus = window.tcpwatch.onCaptureStatus((s) => setCaptureStatus(s))
     const offSplit = window.tcpwatch.onCaptureSplitProgress((p) => setSplitProgress(p))
+    const offNavSettings = window.tcpwatch.onNavigateToSettings(() => setPage('settings'))
 
     window.tcpwatch.isRunning().then(setRunning).catch(() => {})
     window.tcpwatch.getCaptureStatus().then(setCaptureStatus).catch(() => {})
@@ -78,6 +80,7 @@ export function App() {
       offErr()
       offCapStatus()
       offSplit()
+      offNavSettings()
     }
   }, [])
 
@@ -300,11 +303,16 @@ export function App() {
           <button className={page === 'dns' ? 'primary' : undefined} onClick={() => setPage('dns')} title="DNS extraction and analysis">
             DNS
           </button>
+          <button className={page === 'settings' ? 'primary' : undefined} onClick={() => setPage('settings')} title="Application settings">
+            Settings
+          </button>
           <span className="badge">macOS</span>
         </div>
       </div>
 
-      {page === 'analysis' ? (
+      {page === 'settings' ? (
+        <SettingsPage />
+      ) : page === 'analysis' ? (
         <PacketAnalysisPage
           title={analysisTitle}
           result={analysisResult ?? (analysisFilePath ? { filePath: analysisFilePath, generatedAt: '', text: '' } : null)}

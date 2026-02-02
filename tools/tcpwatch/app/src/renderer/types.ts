@@ -107,4 +107,15 @@ export type DnsExtractIndex = {
   }>
 }
 
+export type AppConfig = {
+  anthropicApiKey: string
+  claudeModel: string
+  mcpcapBin: string
+  reverseDns: boolean
+  tsharkBin: string
+  editcapBin: string
+  wiresharkBin: string
+  tcpwatchBin: string
+}
+
 // Renderer API surface is declared in src/renderer/vite-env.d.ts.

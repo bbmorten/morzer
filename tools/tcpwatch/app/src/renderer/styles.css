@@ -455,6 +455,28 @@ th {
   color: var(--danger);
 }
 
+/* Settings page */
+.settingsSection { margin-bottom: 16px; }
+.settingsHeading { margin: 0 0 8px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.settingsRow { margin-bottom: 10px; }
+.settingsRow label { display: block; margin-bottom: 4px; font-size: 12px; color: var(--muted); }
+.settingsRow input[type='text'],
+.settingsRow input[type='password'] {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #0b0f14;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+}
+.settingsApiKeyWrap { display: flex; gap: 8px; align-items: center; }
+.settingsApiKeyWrap input { flex: 1; }
+.settingsActions { display: flex; gap: 8px; margin-top: 16px; margin-bottom: 8px; }
+.settingsSuccess { color: var(--ok); font-size: 12px; margin-top: 4px; }
+.settingsNote { color: var(--muted); font-size: 11px; margin-top: 8px; }
+
 @media (max-width: 900px) {
   .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

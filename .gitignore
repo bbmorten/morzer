@@ -28,6 +28,7 @@ lerna-debug.log*
 .env
 .env.*
 !.env.example
+config.json
 
 # --- Go ---
 # Binaries

@@ -2,6 +2,7 @@ import { Menu, shell, app } from 'electron'
 
 export function buildAppMenu(handlers: {
   onCheckForUpdates: () => void
+  onOpenSettings: () => void
 }): Menu {
   const template: Electron.MenuItemConstructorOptions[] = [
     {
@@ -12,6 +13,11 @@ export function buildAppMenu(handlers: {
         {
           label: 'Check for Updates...',
           click: () => handlers.onCheckForUpdates(),
+        },
+        {
+          label: 'Settings...',
+          accelerator: 'CmdOrCtrl+,',
+          click: () => handlers.onOpenSettings(),
         },
         { type: 'separator' },
         { role: 'services' },
