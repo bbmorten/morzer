@@ -1,23 +1,32 @@
 # Automatically label PRs based on changed files
-# https://github.com/actions/labeler
+# https://github.com/actions/labeler (v5 format)
 
 area:backend:
-  - 'src/**'
-  - 'server/**'
-  - 'api/**'
+  - changed-files:
+      - any-glob-to-any-file:
+          - tools/tcpwatch/main.go
+          - tools/tcpwatch/**/*.go
 
 area:frontend:
-  - 'web/**'
-  - 'app/**'
-  - 'frontend/**'
-  - 'ui/**'
+  - changed-files:
+      - any-glob-to-any-file:
+          - tools/tcpwatch/app/src/**
+          - tools/tcpwatch/app/electron/**
 
 docs:
-  - 'docs/**'
-  - '**/*.md'
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/*.md'
 
 ci:
-  - '.github/**'
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/**
 
 config:
-  - '**/*.{json,yaml,yml,toml}'
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/*.json'
+          - '**/*.yaml'
+          - '**/*.yml'
+          - '**/*.toml'

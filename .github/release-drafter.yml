@@ -1,5 +1,11 @@
 name-template: 'v$RESOLVED_VERSION'
 tag-template: 'v$RESOLVED_VERSION'
+template: |
+  ## Changes
+
+  $CHANGES
+
+  $CONTRIBUTORS
 categories:
   - title: '🚀 Features'
     labels: ['feat', 'feature', 'enhancement']
