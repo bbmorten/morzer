@@ -9,7 +9,7 @@ We take security seriously and appreciate responsible disclosures.
 - Include steps to reproduce, affected versions, and impact.
 - We aim to acknowledge reports within 3 business days.
 
-Maintainer security contact (TODO): `security@your-domain.example`
+Maintainer security contact (TODO): `bbmorten@gmail.com`
 
 ## Scope
 Report vulnerabilities that could impact confidentiality, integrity, or availability.
