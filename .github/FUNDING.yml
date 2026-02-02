@@ -1,4 +1,3 @@
 # Configure one or more funding platforms
 # Replace placeholders with your org/user handles
-github: [Morten, bbmorten]
 custom: ["https://buymeacoffee.com/bbmorten"]
