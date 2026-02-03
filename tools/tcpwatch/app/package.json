@@ -1,7 +1,7 @@
 {
   "name": "tcpwatch-app",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.3.1",
   "author": "Mehmet Bulent Morten",
   "description": "Electron UI for tcpwatch - TCP connection monitor",
   "main": "dist-electron/electron/main.js",

@@ -139,3 +139,63 @@ export function isPlatformWindows(): boolean {
 export function isPlatformDarwin(): boolean {
   return isDarwin
 }
+
+/**
+ * Get process information using PowerShell on Windows.
+ * Returns formatted process details similar to witr output.
+ */
+export function getWindowsProcessInfo(pid: number): Promise<{ output: string } | { error: string }> {
+  return new Promise((resolve) => {
+    const psCommand = `
+$ErrorActionPreference = 'Stop'
+try {
+  $proc = Get-Process -Id ${pid} -ErrorAction Stop
+  $wmiProc = Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" -ErrorAction SilentlyContinue
+
+  $output = @()
+  $output += "Process Information"
+  $output += "==================="
+  $output += "Name:           $($proc.ProcessName)"
+  $output += "PID:            $($proc.Id)"
+  $output += "Path:           $($proc.Path)"
+  if ($wmiProc) {
+    $output += "Command Line:   $($wmiProc.CommandLine)"
+    $output += "Parent PID:     $($wmiProc.ParentProcessId)"
+  }
+  $output += "Start Time:     $($proc.StartTime)"
+  $output += "CPU Time:       $($proc.TotalProcessorTime)"
+  $output += "Memory (WS):    $([math]::Round($proc.WorkingSet64 / 1MB, 2)) MB"
+  $output += "Memory (PM):    $([math]::Round($proc.PrivateMemorySize64 / 1MB, 2)) MB"
+  $output += "Threads:        $($proc.Threads.Count)"
+  $output += "Handles:        $($proc.HandleCount)"
+  if ($proc.MainWindowTitle) {
+    $output += "Window Title:   $($proc.MainWindowTitle)"
+  }
+
+  $output -join [Environment]::NewLine
+} catch {
+  Write-Error $_.Exception.Message
+  exit 1
+}
+`
+    const cp = spawnSync('powershell', [
+      '-NoProfile',
+      '-ExecutionPolicy', 'Bypass',
+      '-Command', psCommand
+    ], {
+      encoding: 'utf8',
+      timeout: 10000,
+    })
+
+    if (cp.status === 0 && cp.stdout) {
+      resolve({ output: cp.stdout.trim() || 'No information available for this process.' })
+    } else {
+      const errorMsg = cp.stderr?.trim() || `PowerShell exited with code ${cp.status}`
+      if (errorMsg.includes('Cannot find a process')) {
+        resolve({ error: `Process ${pid} not found or has terminated.` })
+      } else {
+        resolve({ error: errorMsg })
+      }
+    }
+  })
+}

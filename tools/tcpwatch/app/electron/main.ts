@@ -19,6 +19,8 @@ import {
   whichCommand,
   getMacOSAppBundle,
   terminateProcess,
+  isPlatformWindows,
+  getWindowsProcessInfo,
 } from './platform.js'
 
 type StartOptions = {
@@ -1819,6 +1821,12 @@ app.whenReady().then(() => {
       return { error: `Invalid PID: ${String(pid)}` }
     }
 
+    // On Windows, use PowerShell directly (no external tool needed)
+    if (isPlatformWindows()) {
+      return getWindowsProcessInfo(targetPid)
+    }
+
+    // On macOS/Linux, use witr
     // Strip ANSI escape codes from output
     const stripAnsi = (str: string): string => {
       // eslint-disable-next-line no-control-regex
