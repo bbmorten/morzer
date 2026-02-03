@@ -8,12 +8,9 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	gnet "github.com/shirou/gopsutil/v4/net"
@@ -86,19 +83,6 @@ func (r *procResolver) Name(ctx context.Context, pid int32) string {
 	return name
 }
 
-func psComm(ctx context.Context, pid int32) (string, error) {
-	cmd := exec.CommandContext(ctx, "ps", "-p", fmt.Sprint(pid), "-o", "comm=")
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	name := strings.TrimSpace(string(out))
-	if name == "" {
-		return "", fmt.Errorf("ps returned empty comm")
-	}
-	return filepath.Base(name), nil
-}
-
 func main() {
 	opts, err := parseFlags(os.Args[1:])
 	if err != nil {
@@ -108,7 +92,7 @@ func main() {
 
 	procs := newProcResolver(30 * time.Second)
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), platformSignals()...)
 	defer stop()
 
 	if opts.once {
@@ -152,7 +136,7 @@ func runOnce(ctx context.Context, opts options, procs *procResolver) error {
 		enc := json.NewEncoder(os.Stdout)
 		return enc.Encode(jsonSnapshot{
 			Updated: time.Now(),
-			Title:   "Live TCP connections (macOS)",
+			Title:   fmt.Sprintf("Live TCP connections (%s)", platformName()),
 			Rows:    rows,
 		})
 	}
@@ -166,13 +150,13 @@ func runOnce(ctx context.Context, opts options, procs *procResolver) error {
 	render.PrintTable(os.Stdout, rows, render.Options{
 		ShowHeader: opts.header,
 		Now:        time.Now(),
-		Title:      "Live TCP connections (macOS)",
+		Title:      fmt.Sprintf("Live TCP connections (%s)", platformName()),
 	})
 	return nil
 }
 
 func listTCP(ctx context.Context, opts options, procs *procResolver) ([]render.Row, error) {
-	// gopsutil uses sysctl on macOS to retrieve connection data.
+	// gopsutil uses platform-specific APIs (sysctl on macOS, Windows APIs on Windows).
 	conns, err := gnet.ConnectionsWithContext(ctx, "tcp")
 	if err != nil {
 		return nil, err
@@ -226,7 +210,7 @@ func familyProto(family uint32) string {
 	switch family {
 	case 2: // AF_INET
 		return "tcp4"
-	case 30: // AF_INET6 on Darwin
+	case afINET6:
 		return "tcp6"
 	default:
 		return "tcp"
@@ -277,9 +261,9 @@ func parseFlags(args []string) (options, error) {
 	proc := fs.String("proc", "", "Only show connections whose process name contains this substring (case-insensitive)")
 
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "tcpwatch: live TCP connection viewer for macOS")
+		fmt.Fprintf(fs.Output(), "tcpwatch: live TCP connection viewer for %s\n", platformName())
 		fmt.Fprintln(fs.Output(), "")
-		fmt.Fprintln(fs.Output(), "Note: macOS does not support Linux eBPF; this tool uses system APIs (sysctl) via gopsutil.")
+		fmt.Fprintln(fs.Output(), platformNote())
 		fmt.Fprintln(fs.Output(), "")
 		fmt.Fprintln(fs.Output(), "Usage:")
 		fmt.Fprintln(fs.Output(), "  tcpwatch [flags]")

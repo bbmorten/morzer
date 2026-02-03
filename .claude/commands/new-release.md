@@ -1,6 +1,12 @@
 # Release Skill
 
-Create a new release for tcpwatch-app.
+Create a new release for tcpwatch-app (macOS and Windows).
+
+## Overview
+
+This skill creates a new release that triggers CI/CD builds for both macOS (arm64) and Windows (x64) platforms. The tag push triggers:
+- `.github/workflows/tcpwatch-macos.yml` - Builds macOS dmg, zip, and pkg
+- `.github/workflows/tcpwatch-windows.yml` - Builds Windows NSIS installer and zip
 
 ## Instructions
 

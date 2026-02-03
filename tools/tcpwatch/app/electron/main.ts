@@ -11,6 +11,15 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { checkForUpdate, downloadAndInstallUpdate, type UpdateCheckResult } from './updater.js'
 import { buildAppMenu } from './menu.js'
 import { loadConfig, saveConfig, getConfig, getConfigPath, applyConfigToEnv, migrateFromDotenv, type AppConfig } from './config.js'
+import {
+  getTsharkCandidates,
+  getEditcapCandidates,
+  getWiresharkCandidates,
+  getWitrCandidates,
+  whichCommand,
+  getMacOSAppBundle,
+  terminateProcess,
+} from './platform.js'
 
 type StartOptions = {
   intervalMs: number
@@ -934,18 +943,15 @@ function resolveTsharkPath(): string {
   const env = process.env.TSHARK_BIN
   if (env && fs.existsSync(env)) return env
 
-  const candidates = [
-    '/Applications/Wireshark.app/Contents/MacOS/tshark',
-    '/usr/local/bin/tshark',
-    '/opt/homebrew/bin/tshark'
-  ]
+  const candidates = getTsharkCandidates()
   for (const cand of candidates) {
     if (fs.existsSync(cand)) return cand
   }
 
-  const which = spawnSync('which', ['tshark'], { encoding: 'utf8' })
+  const cmd = whichCommand()
+  const which = spawnSync(cmd, ['tshark'], { encoding: 'utf8' })
   if (which.status === 0) {
-    const p = (which.stdout ?? '').trim()
+    const p = (which.stdout ?? '').trim().split(/\r?\n/)[0] // 'where' on Windows may return multiple lines
     if (p && fs.existsSync(p)) return p
   }
 
@@ -956,18 +962,15 @@ function resolveEditcapPath(): string {
   const env = process.env.EDITCAP_BIN
   if (env && fs.existsSync(env)) return env
 
-  const candidates = [
-    '/Applications/Wireshark.app/Contents/MacOS/editcap',
-    '/usr/local/bin/editcap',
-    '/opt/homebrew/bin/editcap'
-  ]
+  const candidates = getEditcapCandidates()
   for (const cand of candidates) {
     if (fs.existsSync(cand)) return cand
   }
 
-  const which = spawnSync('which', ['editcap'], { encoding: 'utf8' })
+  const cmd = whichCommand()
+  const which = spawnSync(cmd, ['editcap'], { encoding: 'utf8' })
   if (which.status === 0) {
-    const p = (which.stdout ?? '').trim()
+    const p = (which.stdout ?? '').trim().split(/\r?\n/)[0]
     if (p && fs.existsSync(p)) return p
   }
 
@@ -1030,17 +1033,19 @@ function resolveWiresharkLauncher(): WiresharkLauncher {
     return { kind: 'exec', path: env }
   }
 
-  const appBundle = '/Applications/Wireshark.app'
-  if (fs.existsSync(appBundle)) return { kind: 'open', app: appBundle }
+  // Check for macOS app bundle first
+  const appBundle = getMacOSAppBundle()
+  if (appBundle) return { kind: 'open', app: appBundle }
 
-  const candidates = ['/usr/local/bin/wireshark', '/opt/homebrew/bin/wireshark']
+  const candidates = getWiresharkCandidates()
   for (const cand of candidates) {
     if (fs.existsSync(cand)) return { kind: 'exec', path: cand }
   }
 
-  const which = spawnSync('which', ['wireshark'], { encoding: 'utf8' })
+  const cmd = whichCommand()
+  const which = spawnSync(cmd, ['wireshark'], { encoding: 'utf8' })
   if (which.status === 0) {
-    const p = (which.stdout ?? '').trim()
+    const p = (which.stdout ?? '').trim().split(/\r?\n/)[0]
     if (p && fs.existsSync(p)) return { kind: 'exec', path: p }
   }
 
@@ -1082,7 +1087,7 @@ async function listCaptureInterfaces(): Promise<CaptureInterface[]> {
 function stopCaptureChild() {
   if (!captureChild) return
   try {
-    captureChild.kill('SIGTERM')
+    terminateProcess(captureChild)
   } catch {
     // ignore
   }
@@ -1586,7 +1591,7 @@ async function readExpertInfo(filePath: string): Promise<ExpertInfoResult> {
 function stopChild() {
   if (!child) return
   try {
-    child.kill('SIGTERM')
+    terminateProcess(child)
   } catch {
     // ignore
   }
@@ -1822,13 +1827,7 @@ app.whenReady().then(() => {
 
     // Find witr binary - check common Go bin paths since Electron doesn't inherit user's shell PATH
     const findWitr = (): string => {
-      const home = os.homedir()
-      const candidates = [
-        path.join(home, 'go', 'bin', 'witr'),
-        '/usr/local/go/bin/witr',
-        '/opt/homebrew/bin/witr',
-        path.join(home, '.local', 'bin', 'witr')
-      ]
+      const candidates = getWitrCandidates()
       for (const candidate of candidates) {
         try {
           fs.accessSync(candidate, fs.constants.X_OK)
@@ -2235,5 +2234,7 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   stopChild()
+  // On macOS, apps typically stay open until explicitly quit
+  // On Windows and Linux, quit when all windows are closed
   if (process.platform !== 'darwin') app.quit()
 })

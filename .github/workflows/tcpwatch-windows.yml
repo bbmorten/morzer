@@ -1,0 +1,86 @@
+name: tcpwatch (Windows)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Optional: upload artifacts to this GitHub Release tag (e.g. tcpwatch-app-v0.1.1)"
+        required: false
+        type: string
+  push:
+    tags:
+      - "tcpwatch-app-v*"
+      - "tcpwatch-v*"
+
+permissions:
+  contents: write
+
+env:
+  CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+          cache: true
+          cache-dependency-path: |
+            tools/tcpwatch/go.sum
+            tools/tcpwatch/go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: tools/tcpwatch/app/package-lock.json
+
+      - name: Build tcpwatch Go binary
+        working-directory: tools/tcpwatch
+        run: go build -o tcpwatch.exe
+
+      - name: Install app deps
+        working-directory: tools/tcpwatch/app
+        run: npm ci
+
+      - name: Derive app version
+        id: ver
+        shell: bash
+        run: |
+          ref="${{ (github.event_name == 'workflow_dispatch' && inputs.release_tag != '') && inputs.release_tag || github.ref_name }}"
+          ver="${ref#tcpwatch-app-v}"
+          ver="${ver#tcpwatch-v}"
+          echo "tag=$ref" >> "$GITHUB_OUTPUT"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "Using version: $ver (from tag: $ref)"
+
+      - name: Build renderer + electron
+        working-directory: tools/tcpwatch/app
+        run: npm run build
+
+      - name: Package (zip + nsis)
+        working-directory: tools/tcpwatch/app
+        run: |
+          npx electron-builder --config.extraMetadata.version="${{ steps.ver.outputs.version }}" --win nsis zip --x64
+
+      - name: Upload artifacts (workflow run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: tcpwatch-windows-x64
+          path: |
+            tools/tcpwatch/app/dist/*.zip
+            tools/tcpwatch/app/dist/*.exe
+          if-no-files-found: error
+
+      - name: Publish GitHub Release assets (tags only)
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag != '' && inputs.release_tag || github.ref_name }}
+          files: |
+            tools/tcpwatch/app/dist/*.zip
+            tools/tcpwatch/app/dist/*.exe
