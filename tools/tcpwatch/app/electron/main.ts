@@ -369,7 +369,11 @@ function findUp(startDir: string, relPath: string): string | null {
 }
 
 function resolveRepoRoot(): string {
-  const appPath = app.getAppPath()
+  // In packaged apps, app.getAppPath() returns the app.asar file path.
+  // Resolve to its parent directory so cwd and path lookups use a real directory.
+  const appPath = app.isPackaged
+    ? path.resolve(app.getAppPath(), '..')
+    : app.getAppPath()
   const mcpPath = findUp(appPath, '.mcp.json')
   if (mcpPath) return path.dirname(mcpPath)
   const gitPath = findUp(appPath, '.git')
@@ -417,15 +421,9 @@ type DnsExtractIndex = {
 
 type McpServerConfig = { command: string; args?: string[] }
 
-/** Wrap a command through cmd.exe on Windows so spawn can resolve Store-app paths. */
-function wrapForWindows(cfg: McpServerConfig): McpServerConfig {
-  if (process.platform !== 'win32') return cfg
-  return { command: process.env.COMSPEC || 'cmd.exe', args: ['/c', cfg.command, ...(cfg.args ?? [])] }
-}
-
 function resolveMcpcapServerConfig(): McpServerConfig {
   const envBin = process.env.TCPWATCH_MCPCAP_BIN || process.env.MCPCAP_BIN
-  if (envBin && fs.existsSync(envBin)) return wrapForWindows({ command: envBin, args: [] })
+  if (envBin && fs.existsSync(envBin)) return { command: envBin, args: [] }
 
   const repoRoot = resolveRepoRoot()
   const candidates: string[] = []
@@ -448,7 +446,7 @@ function resolveMcpcapServerConfig(): McpServerConfig {
   const command = String(server?.command ?? '').trim()
   if (!command) throw new Error('Invalid .mcp.json: missing mcpServers.mcpcap.command')
   const args = Array.isArray(server?.args) ? server.args.map((x: any) => String(x)) : []
-  return wrapForWindows({ command, args })
+  return { command, args }
 }
 
 function resolvePacketAnalysisPrompt(): string {
