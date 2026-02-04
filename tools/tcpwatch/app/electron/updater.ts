@@ -107,11 +107,11 @@ export async function checkForUpdate(currentVersion: string): Promise<UpdateChec
       return { available: false, currentVersion }
     }
 
-    // Find the arm64 mac zip asset
-    const zipAsset = best.release.assets.find((a) =>
-      a.name.match(/^tcpwatch-.*-arm64-mac\.zip$/),
-    )
-    if (!zipAsset) {
+    // Find the platform-specific update asset
+    const asset = process.platform === 'win32'
+      ? best.release.assets.find((a) => /tcpwatch.*Setup.*\.exe$/i.test(a.name))
+      : best.release.assets.find((a) => /^tcpwatch-.*-arm64-mac\.zip$/.test(a.name))
+    if (!asset) {
       return { available: false, currentVersion }
     }
 
@@ -122,7 +122,7 @@ export async function checkForUpdate(currentVersion: string): Promise<UpdateChec
         latestVersion: best.version,
         releaseTag: best.release.tag_name,
         releaseUrl: best.release.html_url,
-        downloadUrl: zipAsset.browser_download_url,
+        downloadUrl: asset.browser_download_url,
         releaseNotes: best.release.body ?? '',
         publishedAt: best.release.published_at ?? '',
       },
@@ -145,6 +145,78 @@ export async function downloadAndInstallUpdate(
     return
   }
 
+  if (process.platform === 'win32') {
+    return downloadAndInstallWindows(info, parentWindow)
+  }
+  return downloadAndInstallMac(info, parentWindow)
+}
+
+/* ------------------------------------------------------------------ */
+/*  Windows: download NSIS installer and run it silently               */
+/* ------------------------------------------------------------------ */
+
+async function downloadAndInstallWindows(
+  info: UpdateInfo,
+  parentWindow?: BrowserWindow | null,
+): Promise<void> {
+  const installerPath = path.join(os.tmpdir(), `tcpwatch-setup-${info.latestVersion}.exe`)
+
+  try {
+    console.log(`[updater] Downloading ${info.downloadUrl}`)
+    const resp = await fetch(info.downloadUrl, {
+      headers: { 'User-Agent': `tcpwatch/${info.currentVersion}` },
+    })
+    if (!resp.ok) {
+      throw new Error(`Download failed: ${resp.status} ${resp.statusText}`)
+    }
+    if (!resp.body) {
+      throw new Error('Download failed: no response body')
+    }
+
+    const nodeStream = Readable.fromWeb(resp.body as import('stream/web').ReadableStream)
+    await pipeline(nodeStream, createWriteStream(installerPath))
+    console.log(`[updater] Downloaded installer to ${installerPath}`)
+
+    const restartChoice = dialog.showMessageBoxSync(
+      parentWindow ? parentWindow : undefined!,
+      {
+        type: 'info',
+        title: 'Update Ready',
+        message: `tcpwatch v${info.latestVersion} has been downloaded.`,
+        detail: 'The application will close and the installer will run to apply the update.',
+        buttons: ['Install Now', 'Later'],
+        defaultId: 0,
+      },
+    )
+
+    if (restartChoice === 0) {
+      // Run the NSIS installer silently. It handles stopping the old app,
+      // replacing files, and relaunching.
+      const child = spawnChild(installerPath, ['/S', '--force-run'], {
+        detached: true,
+        stdio: 'ignore',
+      })
+      child.unref()
+      console.log(`[updater] Launched installer (pid ${child.pid}), exiting`)
+      setTimeout(() => app.exit(0), 500)
+    }
+    // If "Later", the installer stays in temp for next time.
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error(`[updater] Update failed:`, message)
+    dialog.showErrorBox('Update Failed', message)
+    try { fs.unlinkSync(installerPath) } catch { /* ignore */ }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  macOS: download zip, extract, and swap .app bundle                 */
+/* ------------------------------------------------------------------ */
+
+async function downloadAndInstallMac(
+  info: UpdateInfo,
+  parentWindow?: BrowserWindow | null,
+): Promise<void> {
   // Determine the running .app bundle path
   const exePath = app.getPath('exe') // e.g. /Applications/tcpwatch.app/Contents/MacOS/tcpwatch
   const appBundlePath = path.resolve(exePath, '..', '..', '..') // .app directory

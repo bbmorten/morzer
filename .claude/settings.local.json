@@ -19,7 +19,9 @@
       "Bash(git commit:*)",
       "Bash(gh release create:*)",
       "Bash(git push:*)",
-      "Bash(gh:*)"
+      "Bash(gh:*)",
+      "Bash(find:*)",
+      "Bash(npm run typecheck:*)"
     ]
   }
 }
