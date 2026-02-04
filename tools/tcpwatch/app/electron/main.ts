@@ -417,9 +417,15 @@ type DnsExtractIndex = {
 
 type McpServerConfig = { command: string; args?: string[] }
 
+/** Wrap a command through cmd.exe on Windows so spawn can resolve Store-app paths. */
+function wrapForWindows(cfg: McpServerConfig): McpServerConfig {
+  if (process.platform !== 'win32') return cfg
+  return { command: process.env.COMSPEC || 'cmd.exe', args: ['/c', cfg.command, ...(cfg.args ?? [])] }
+}
+
 function resolveMcpcapServerConfig(): McpServerConfig {
   const envBin = process.env.TCPWATCH_MCPCAP_BIN || process.env.MCPCAP_BIN
-  if (envBin && fs.existsSync(envBin)) return { command: envBin, args: [] }
+  if (envBin && fs.existsSync(envBin)) return wrapForWindows({ command: envBin, args: [] })
 
   const repoRoot = resolveRepoRoot()
   const candidates: string[] = []
@@ -442,7 +448,7 @@ function resolveMcpcapServerConfig(): McpServerConfig {
   const command = String(server?.command ?? '').trim()
   if (!command) throw new Error('Invalid .mcp.json: missing mcpServers.mcpcap.command')
   const args = Array.isArray(server?.args) ? server.args.map((x: any) => String(x)) : []
-  return { command, args }
+  return wrapForWindows({ command, args })
 }
 
 function resolvePacketAnalysisPrompt(): string {
