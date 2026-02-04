@@ -913,39 +913,49 @@ function resolveTcpwatchPath(): string {
   const env = process.env.TCPWATCH_BIN
   if (env && fs.existsSync(env)) return env
 
+  const exeName = process.platform === 'win32' ? 'tcpwatch.exe' : 'tcpwatch'
+
   if (app.isPackaged) {
-    const packaged = path.join(process.resourcesPath, 'tcpwatch')
+    const packaged = path.join(process.resourcesPath, exeName)
     if (fs.existsSync(packaged)) return packaged
   }
 
   // Dev fallback: repo-relative path.
   const appPath = app.getAppPath()
-  const found = findUp(appPath, 'tools/tcpwatch/tcpwatch')
+  const found = findUp(appPath, `tools/tcpwatch/${exeName}`)
   if (found) return found
 
   // Last resort: sibling to CWD
-  const fallback = path.resolve(process.cwd(), '../tcpwatch')
+  const fallback = path.resolve(process.cwd(), '..', exeName)
   if (fs.existsSync(fallback)) return fallback
 
-  throw new Error('tcpwatch binary not found. Build it with: cd tools/tcpwatch && go build -o tcpwatch')
+  throw new Error(`tcpwatch binary not found. Build it with: cd tools/tcpwatch && go build -o ${exeName}`)
 }
 
 function resolveTsharkPath(): string {
   const env = process.env.TSHARK_BIN
   if (env && fs.existsSync(env)) return env
 
-  const candidates = [
-    '/Applications/Wireshark.app/Contents/MacOS/tshark',
-    '/usr/local/bin/tshark',
-    '/opt/homebrew/bin/tshark'
-  ]
+  const candidates =
+    process.platform === 'win32'
+      ? [
+          'C:\\Program Files\\Wireshark\\tshark.exe',
+          'C:\\Program Files (x86)\\Wireshark\\tshark.exe'
+        ]
+      : [
+          '/Applications/Wireshark.app/Contents/MacOS/tshark',
+          '/usr/local/bin/tshark',
+          '/opt/homebrew/bin/tshark'
+        ]
+
   for (const cand of candidates) {
     if (fs.existsSync(cand)) return cand
   }
 
-  const which = spawnSync('which', ['tshark'], { encoding: 'utf8' })
+  const whichCmd = process.platform === 'win32' ? 'where' : 'which'
+  const which = spawnSync(whichCmd, ['tshark'], { encoding: 'utf8' })
   if (which.status === 0) {
-    const p = (which.stdout ?? '').trim()
+    const p = (which.stdout ?? '').trim().split('\n')[0].trim()
     if (p && fs.existsSync(p)) return p
   }
 
@@ -956,18 +966,26 @@ function resolveEditcapPath(): string {
   const env = process.env.EDITCAP_BIN
   if (env && fs.existsSync(env)) return env
 
-  const candidates = [
-    '/Applications/Wireshark.app/Contents/MacOS/editcap',
-    '/usr/local/bin/editcap',
-    '/opt/homebrew/bin/editcap'
-  ]
+  const candidates =
+    process.platform === 'win32'
+      ? [
+          'C:\\Program Files\\Wireshark\\editcap.exe',
+          'C:\\Program Files (x86)\\Wireshark\\editcap.exe'
+        ]
+      : [
+          '/Applications/Wireshark.app/Contents/MacOS/editcap',
+          '/usr/local/bin/editcap',
+          '/opt/homebrew/bin/editcap'
+        ]
+
   for (const cand of candidates) {
     if (fs.existsSync(cand)) return cand
   }
 
-  const which = spawnSync('which', ['editcap'], { encoding: 'utf8' })
+  const whichCmd = process.platform === 'win32' ? 'where' : 'which'
+  const which = spawnSync(whichCmd, ['editcap'], { encoding: 'utf8' })
   if (which.status === 0) {
-    const p = (which.stdout ?? '').trim()
+    const p = (which.stdout ?? '').trim().split('\n')[0].trim()
     if (p && fs.existsSync(p)) return p
   }
 
@@ -1030,17 +1048,28 @@ function resolveWiresharkLauncher(): WiresharkLauncher {
     return { kind: 'exec', path: env }
   }
 
-  const appBundle = '/Applications/Wireshark.app'
-  if (fs.existsSync(appBundle)) return { kind: 'open', app: appBundle }
+  if (process.platform === 'win32') {
+    const candidates = [
+      'C:\\Program Files\\Wireshark\\Wireshark.exe',
+      'C:\\Program Files (x86)\\Wireshark\\Wireshark.exe'
+    ]
+    for (const cand of candidates) {
+      if (fs.existsSync(cand)) return { kind: 'exec', path: cand }
+    }
+  } else {
+    const appBundle = '/Applications/Wireshark.app'
+    if (fs.existsSync(appBundle)) return { kind: 'open', app: appBundle }
 
-  const candidates = ['/usr/local/bin/wireshark', '/opt/homebrew/bin/wireshark']
-  for (const cand of candidates) {
-    if (fs.existsSync(cand)) return { kind: 'exec', path: cand }
+    const candidates = ['/usr/local/bin/wireshark', '/opt/homebrew/bin/wireshark']
+    for (const cand of candidates) {
+      if (fs.existsSync(cand)) return { kind: 'exec', path: cand }
+    }
   }
 
-  const which = spawnSync('which', ['wireshark'], { encoding: 'utf8' })
+  const whichCmd = process.platform === 'win32' ? 'where' : 'which'
+  const which = spawnSync(whichCmd, ['wireshark'], { encoding: 'utf8' })
   if (which.status === 0) {
-    const p = (which.stdout ?? '').trim()
+    const p = (which.stdout ?? '').trim().split('\n')[0].trim()
     if (p && fs.existsSync(p)) return { kind: 'exec', path: p }
   }
 
@@ -1820,7 +1849,52 @@ app.whenReady().then(() => {
       return str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
     }
 
-    // Find witr binary - check common Go bin paths since Electron doesn't inherit user's shell PATH
+    if (process.platform === 'win32') {
+      // On Windows, use PowerShell to gather process information
+      const psScript = [
+        `$p = Get-Process -Id ${targetPid} -ErrorAction SilentlyContinue`,
+        `if (-not $p) { Write-Host "Process with PID ${targetPid} not found."; exit 1 }`,
+        `Write-Host "Name:          $($p.ProcessName)"`,
+        `Write-Host "PID:           $($p.Id)"`,
+        `Write-Host "Path:          $($p.Path)"`,
+        `Write-Host "Start Time:    $($p.StartTime)"`,
+        `Write-Host "CPU (s):       $([math]::Round($p.CPU, 2))"`,
+        `Write-Host "Working Set:   $([math]::Round($p.WorkingSet64 / 1MB, 1)) MB"`,
+        `Write-Host "Private Mem:   $([math]::Round($p.PrivateMemorySize64 / 1MB, 1)) MB"`,
+        `Write-Host "Threads:       $($p.Threads.Count)"`,
+        `Write-Host "Handles:       $($p.HandleCount)"`,
+        `Write-Host "Window Title:  $($p.MainWindowTitle)"`,
+        `Write-Host ""`,
+        `$netstat = netstat -ano | Select-String "\\s${targetPid}$"`,
+        `if ($netstat) { Write-Host "Network Connections:"; $netstat | ForEach-Object { Write-Host "  $_" } }`
+      ].join('; ')
+
+      return new Promise((resolve) => {
+        const cp = spawn('powershell', ['-NoProfile', '-Command', psScript], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          timeout: 10000
+        })
+
+        let stdout = ''
+        let stderr = ''
+        cp.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
+        cp.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+
+        cp.on('error', (err: Error) => {
+          resolve({ error: `Failed to run PowerShell: ${err.message}` })
+        })
+
+        cp.on('close', (code) => {
+          if (code === 0) {
+            resolve({ output: stdout.trim() || 'No information available for this process.' })
+          } else {
+            resolve({ error: stderr.trim() || `PowerShell exited with code ${code}` })
+          }
+        })
+      })
+    }
+
+    // macOS/Linux: use witr
     const findWitr = (): string => {
       const home = os.homedir()
       const candidates = [
@@ -1837,7 +1911,7 @@ app.whenReady().then(() => {
           // Not found or not executable, try next
         }
       }
-      return 'witr' // Fallback to PATH lookup
+      return 'witr'
     }
 
     const witrPath = findWitr()
@@ -2118,11 +2192,8 @@ app.whenReady().then(() => {
       return
     }
     if (launcher?.kind === 'exec') {
-      const res = spawnSync(launcher.path, [p], { encoding: 'utf8' })
-      if (res.status !== 0) {
-        const msg = (res.stderr ?? '').trim() || `wireshark failed (code=${res.status})`
-        throw new Error(msg)
-      }
+      const child = spawn(launcher.path, [p], { detached: true, stdio: 'ignore' })
+      child.unref()
       return
     }
 
@@ -2180,7 +2251,8 @@ app.whenReady().then(() => {
       // Use dumpcap -f <filter> -d to validate BPF syntax without capturing.
       // dumpcap is in the same directory as tshark.
       const tsharkPath = resolveTsharkPath()
-      const dumpcapPath = path.join(path.dirname(tsharkPath), 'dumpcap')
+      const dumpcapName = process.platform === 'win32' ? 'dumpcap.exe' : 'dumpcap'
+      const dumpcapPath = path.join(path.dirname(tsharkPath), dumpcapName)
 
       const iface = String(ifaceId ?? '').trim()
       const args = ['-f', f, '-d']

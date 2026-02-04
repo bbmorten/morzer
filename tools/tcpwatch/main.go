@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -87,6 +88,9 @@ func (r *procResolver) Name(ctx context.Context, pid int32) string {
 }
 
 func psComm(ctx context.Context, pid int32) (string, error) {
+	if runtime.GOOS == "windows" {
+		return "", fmt.Errorf("ps fallback not available on Windows")
+	}
 	cmd := exec.CommandContext(ctx, "ps", "-p", fmt.Sprint(pid), "-o", "comm=")
 	out, err := cmd.Output()
 	if err != nil {
@@ -152,7 +156,7 @@ func runOnce(ctx context.Context, opts options, procs *procResolver) error {
 		enc := json.NewEncoder(os.Stdout)
 		return enc.Encode(jsonSnapshot{
 			Updated: time.Now(),
-			Title:   "Live TCP connections (macOS)",
+			Title:   "Live TCP connections",
 			Rows:    rows,
 		})
 	}
@@ -166,7 +170,7 @@ func runOnce(ctx context.Context, opts options, procs *procResolver) error {
 	render.PrintTable(os.Stdout, rows, render.Options{
 		ShowHeader: opts.header,
 		Now:        time.Now(),
-		Title:      "Live TCP connections (macOS)",
+		Title:      "Live TCP connections",
 	})
 	return nil
 }
@@ -222,11 +226,10 @@ func listTCP(ctx context.Context, opts options, procs *procResolver) ([]render.R
 }
 
 func familyProto(family uint32) string {
-	// Values come from syscall.AF_* constants, but we only need a user-friendly label.
 	switch family {
-	case 2: // AF_INET
+	case syscall.AF_INET:
 		return "tcp4"
-	case 30: // AF_INET6 on Darwin
+	case syscall.AF_INET6:
 		return "tcp6"
 	default:
 		return "tcp"
@@ -277,9 +280,9 @@ func parseFlags(args []string) (options, error) {
 	proc := fs.String("proc", "", "Only show connections whose process name contains this substring (case-insensitive)")
 
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "tcpwatch: live TCP connection viewer for macOS")
+		fmt.Fprintln(fs.Output(), "tcpwatch: live TCP connection viewer")
 		fmt.Fprintln(fs.Output(), "")
-		fmt.Fprintln(fs.Output(), "Note: macOS does not support Linux eBPF; this tool uses system APIs (sysctl) via gopsutil.")
+		fmt.Fprintln(fs.Output(), "Uses system APIs via gopsutil for cross-platform TCP monitoring.")
 		fmt.Fprintln(fs.Output(), "")
 		fmt.Fprintln(fs.Output(), "Usage:")
 		fmt.Fprintln(fs.Output(), "  tcpwatch [flags]")

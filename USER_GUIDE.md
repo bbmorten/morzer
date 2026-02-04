@@ -1,13 +1,28 @@
-# tcpwatch (macOS) — User Guide
+# tcpwatch — User Guide
 
-`tcpwatch` is a macOS desktop app that shows live TCP connections on your machine and (optionally) lets you terminate the owning process.
+`tcpwatch` is a cross-platform desktop app (macOS and Windows) that shows live TCP connections on your machine and (optionally) lets you terminate the owning process.
 
 ## Install
+
+### macOS
 
 You can install via either:
 
 - **PKG installer** (`tcpwatch-…​.pkg`): run it and follow the prompts.
 - **ZIP** (`tcpwatch-…​.zip`): unzip, then drag `tcpwatch.app` into `/Applications`.
+
+### Windows
+
+Run from source:
+
+1. Install [Go](https://go.dev/dl/), [Node.js](https://nodejs.org/), and [Wireshark](https://www.wireshark.org/download.html).
+2. Clone the repository.
+3. Run:
+   ```bash
+   cd tools\tcpwatch\app
+   npm install
+   npm run dev
+   ```
 
 ## Downloads / Releases
 
@@ -16,7 +31,7 @@ If you received the app from GitHub:
 - **Releases page**: download the `.pkg` or `.zip` attached to a tagged release (tags look like `tcpwatch-app-vX.Y.Z`).
 - **Actions artifacts**: maintainers can also download build artifacts from the `tcpwatch (macOS)` workflow run.
 
-### First run / Gatekeeper
+### First run / Gatekeeper (macOS only)
 
 Because the app may be **unsigned** (developer builds), macOS may block it the first time.
 
@@ -161,13 +176,13 @@ The report is rendered as Markdown (tables, code blocks, etc.).
 
 Prerequisites:
 
-- A configured `mcpcap` MCP server.
 - An Anthropic API key.
+- The `mcpcap` MCP server binary, installed and configured (see [mcpcap Configuration](#mcpcap-configuration) below).
 
 Configuration:
 
-- Open **Settings** (Cmd+, or app menu → Settings...) and enter your Anthropic API key. Settings are stored in `config.json` and persist across restarts.
-- Configure `mcpcap` via `~/Library/Application Support/tcpwatch/.mcp.json` (or set the mcpcap binary path in Settings).
+- Open **Settings** (Cmd+, on macOS, or app menu → Settings...) and enter your Anthropic API key. Settings are stored in `config.json` and persist across restarts.
+- Set the **mcpcap** binary path in the Settings page (recommended). See [mcpcap Configuration](#mcpcap-configuration) for details.
 - Existing `.env` files are automatically migrated to `config.json` on first launch.
 
 Notes:
@@ -175,24 +190,86 @@ Notes:
 - The analysis runs locally in the Electron main process and may take a while on large files.
 - If the API key is missing, you'll see an error directing you to Settings.
 
+### mcpcap Configuration
+
+`mcpcap` is the MCP (Model Context Protocol) server that provides packet analysis tools to Claude. It reads `.pcap`/`.pcapng` files and exposes structured data (DNS records, DHCP leases, ICMP messages, capture info) as MCP tools.
+
+**Install**:
+
+```bash
+pip install mcpcap
+```
+
+**Configure**: Open the app's **Settings** page and set the **mcpcap** field to the absolute path of the `mcpcap` binary. This is the recommended approach because it stores the path per-machine in `config.json` and does not affect the repository.
+
+**Finding the binary path after installation**:
+
+| Platform | Command | Typical Path |
+|----------|---------|--------------|
+| macOS | `which mcpcap` | `/path/to/venv/bin/mcpcap` or `~/.local/bin/mcpcap` |
+| Windows | `where mcpcap` or check pip output | `C:\Users\<user>\AppData\Local\...\Python3XX\Scripts\mcpcap.exe` |
+
+If `where mcpcap` (Windows) or `which mcpcap` (macOS) returns nothing, look for the "Scripts" directory in the pip installation warnings, e.g.:
+
+```
+WARNING: The script mcpcap.exe is installed in '...\Scripts' which is not on PATH.
+```
+
+Copy the full path and paste it into the Settings **mcpcap** field.
+
+**Alternative configuration methods** (in order of precedence):
+
+1. `TCPWATCH_MCPCAP_BIN` environment variable
+2. Settings page **mcpcap** field (stored in `config.json`)
+3. `.mcp.json` at the repo root (macOS fallback only)
+
+The `.mcp.json` file at the repo root contains a macOS-specific default path and should not be modified for Windows development.
+
 ## Settings
 
-Open Settings via **Cmd+,** or the app menu (**tcpwatch → Settings...**).
+Open Settings via **Cmd+,** (macOS) or the app menu (**tcpwatch → Settings...**).
 
-Available settings:
+### Settings Reference
 
-- **Anthropic API Key**: required for Claude-powered analysis features.
-- **Claude Model**: override the model used for analysis (leave empty for auto-detect).
-- **Binary paths**: custom paths for `mcpcap`, `tshark`, `editcap`, `wireshark`, and `tcpwatch` binaries. Leave empty to use auto-detected defaults.
-- **Reverse DNS**: enable or disable reverse DNS lookups during stream splitting.
+| Setting | Env Variable | Description | Default |
+|---------|-------------|-------------|---------|
+| **Anthropic API Key** | `ANTHROPIC_API_KEY` | Required for Claude-powered analysis features (Analyze, DNS Analyze) | (none) |
+| **Claude Model** | `TCPWATCH_CLAUDE_MODEL` | Override the model used for analysis. Leave empty to use the default | `claude-sonnet-4-20250514` |
+| **mcpcap** | `TCPWATCH_MCPCAP_BIN` | Absolute path to the `mcpcap` MCP server binary. Install with `pip install mcpcap`. See [mcpcap Configuration](#mcpcap-configuration) | Auto-detect |
+| **tshark** | `TSHARK_BIN` | Path to tshark binary (from Wireshark). Used for packet capture, stream splitting, Expert Information, and DNS extraction | Auto-detect |
+| **editcap** | `EDITCAP_BIN` | Path to editcap binary (from Wireshark). Used for stream splitting with snaplen truncation | Auto-detect |
+| **Wireshark** | `WIRESHARK_BIN` | Path to the Wireshark GUI binary. Used for opening capture files | Auto-detect |
+| **tcpwatch** | `TCPWATCH_BIN` | Path to the Go tcpwatch binary. Used for TCP connection monitoring | Auto-detect |
+| **Reverse DNS** | `TCPWATCH_RDNS` | Enable or disable reverse DNS lookups during stream splitting. Set to `0` or `false` to disable | Enabled |
 
-Settings are stored in `~/Library/Application Support/tcpwatch/config.json` (packaged app) or `config.json` in the repo root (dev mode).
+### Auto-detection Paths
 
-Precedence (highest to lowest):
+When a binary path is left empty (recommended), the app searches standard installation locations:
+
+**tshark / editcap / Wireshark / dumpcap**:
+- macOS: `/Applications/Wireshark.app/Contents/MacOS/`, `/usr/local/bin/`, `/opt/homebrew/bin/`
+- Windows: `C:\Program Files\Wireshark\`, `C:\Program Files (x86)\Wireshark\`
+
+**tcpwatch**:
+- Dev mode: walks up from the app directory looking for `tools/tcpwatch/tcpwatch` (or `tcpwatch.exe` on Windows)
+- Packaged: bundled in the app resources
+
+### Storage Locations
+
+Settings are stored in `config.json`:
+
+- **macOS packaged**: `~/Library/Application Support/tcpwatch/config.json`
+- **Windows packaged**: `%APPDATA%/tcpwatch/config.json`
+- **Dev mode** (any platform): `config.json` in the repo root (gitignored)
+
+### Precedence
+
+Configuration values are resolved in this order (highest to lowest):
 
 1. Shell environment variables
-2. `config.json` values
-3. `.env` file values (legacy, auto-migrated on first launch)
+2. `config.json` values (set via Settings page)
+3. `.env` file values (legacy, auto-migrated to `config.json` on first launch)
+4. `.mcp.json` at repo root (mcpcap only, macOS fallback)
 
 ## Filters
 
@@ -226,9 +303,9 @@ Safety notes:
 
 ## Permissions & missing process names
 
-macOS may restrict visibility into other processes.
+The OS may restrict visibility into other processes.
 
-If you see missing `PROCESS` names or can’t terminate a PID:
+**macOS**: If you see missing `PROCESS` names or can't terminate a PID:
 
 - Try running the CLI directly from Terminal as admin (for debugging):
 
@@ -239,15 +316,26 @@ If you see missing `PROCESS` names or can’t terminate a PID:
 
 - For the desktop app, you typically need to run it normally; it will show what macOS allows.
 
+**Windows**: Run the app as Administrator to see process names for system services. Some processes may show an empty name due to access restrictions.
+
+## Process Information
+
+When you click on a process row, the app shows detailed process information:
+
+- **macOS**: Uses `witr -p <pid>` (install with `go install github.com/morzer/witr@latest`). If `witr` is not installed, you'll see an informational message.
+- **Windows**: Uses PowerShell `Get-Process` and `netstat`. Shows process name, path, start time, CPU usage, memory, threads, handles, window title, and active network connections.
+
 ## Troubleshooting
 
 ### App window is blank
 
-Run the app from Terminal to capture logs:
+**macOS**: Run the app from Terminal to capture logs:
 
 ```bash
 OPEN_DEVTOOLS=1 ELECTRON_ENABLE_LOGGING=1 /Applications/tcpwatch.app/Contents/MacOS/tcpwatch
 ```
+
+**Windows**: Run from a terminal with `npm run dev` to see console output.
 
 This opens DevTools and prints main/renderer load diagnostics to the terminal.
 
@@ -257,11 +345,28 @@ This opens DevTools and prints main/renderer load diagnostics to the terminal.
 - Remove all filters (PID/Port/State/Process) and try again.
 - Ensure **Include LISTEN** is enabled if you expect LISTEN sockets.
 
+### mcpcap / Analyze errors
+
+- Verify `mcpcap` is installed: `mcpcap --help`
+- Check the Settings page has the correct **mcpcap** path
+- Verify the **Anthropic API Key** is set in Settings
+- Check the Electron console for detailed error messages
+
+### tshark not found
+
+- Ensure Wireshark is installed
+- On Windows, check `C:\Program Files\Wireshark\tshark.exe` exists
+- On macOS, check `/Applications/Wireshark.app` exists
+- Or set the path manually in Settings
+
 ## Uninstall
 
+**macOS**:
 - If installed via ZIP: delete `/Applications/tcpwatch.app`.
 - If installed via PKG: you can still remove `/Applications/tcpwatch.app` (the installer does not create required system services).
 
+**Windows**: Delete the cloned repository folder. No system-level files are installed.
+
 ## Privacy
 
-The app reads local network socket metadata and process names (when available). It does not send that data anywhere by default.
+The app reads local network socket metadata and process names (when available). It does not send that data anywhere by default. When using the Analyze feature, capture data is sent to the Anthropic API for analysis.

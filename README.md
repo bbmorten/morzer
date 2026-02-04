@@ -2,16 +2,20 @@
 
 Looking for end-user instructions? See: `USER_GUIDE.md`.
 
-This is the macOS Electron UI for the `tcpwatch` Go CLI.
+A cross-platform Electron UI for the `tcpwatch` Go CLI. Supports macOS and Windows.
 
 ## Quick Start
 
 ### 1) Install
 
+**macOS**:
 - If you have a `.pkg` installer: run it.
 - If you have a `.zip`: unzip and drag `tcpwatch.app` into `/Applications`.
+- If macOS blocks the app (unsigned builds), use Finder → right‑click `tcpwatch` → **Open**.
 
-If macOS blocks the app (unsigned builds), use Finder → right‑click `tcpwatch` → **Open**.
+**Windows**:
+- Install prerequisites: [Go](https://go.dev/dl/), [Node.js](https://nodejs.org/), and [Wireshark](https://www.wireshark.org/download.html).
+- Clone the repo and run from source (see Dev section below).
 
 ### 2) Use
 
@@ -35,23 +39,54 @@ For details (filters, troubleshooting, permissions), see `USER_GUIDE.md`.
 
 ## Prereqs
 
-- Node.js + npm
-- A built `tcpwatch` binary at `tools/tcpwatch/tcpwatch`
-- Wireshark installed (provides `tshark` and `editcap`) for capture/splitting, snaplen truncation, and Expert Information analysis
-- For **Analyze**: an Anthropic API key and `mcpcap` available via `.mcp.json` (or `TCPWATCH_MCPCAP_BIN` override).
+- **Go** (1.21+)
+- **Node.js** + npm
+- **Wireshark** installed (provides `tshark` and `editcap`) for capture/splitting, snaplen truncation, and Expert Information analysis
+- For **Analyze**: an Anthropic API key and `mcpcap` (`pip install mcpcap`)
 
-Packaged app notes (Analyze):
+### mcpcap Setup
+
+`mcpcap` is the MCP server that provides packet analysis tools to Claude. Install it via pip:
+
+```bash
+pip install mcpcap
+```
+
+Then configure the path to the `mcpcap` binary in the app's **Settings** page (recommended) or via the `TCPWATCH_MCPCAP_BIN` environment variable. The Settings page stores the path per-machine in `config.json`, keeping it separate from the repository.
+
+Typical binary locations after `pip install mcpcap`:
+- **macOS**: `~/.local/bin/mcpcap` or inside a virtualenv
+- **Windows**: `C:\Users\<user>\AppData\Local\...\Python3XX\Scripts\mcpcap.exe`
+
+The `.mcp.json` at the repo root is a macOS-only fallback. On Windows, always use the Settings page.
+
+### Packaged app notes (Analyze)
 
 - The prompt is bundled into the app at `Contents/Resources/prompts/packet-analysis.md`.
-- Configure the API key and binary paths via **Settings** (Cmd+,) — stored in `~/Library/Application Support/tcpwatch/config.json`.
+- Configure the API key and binary paths via **Settings** (Cmd+, on macOS, app menu on Windows).
+- Settings are stored in:
+  - **macOS**: `~/Library/Application Support/tcpwatch/config.json`
+  - **Windows**: `%APPDATA%/tcpwatch/config.json`
 - Existing `.env` files are automatically migrated to `config.json` on first launch.
-- `mcpcap` via `~/Library/Application Support/tcpwatch/.mcp.json` (or `TCPWATCH_MCPCAP_BIN` / Settings)
 
-Build the binary:
+### Build the Go binary
 
+**macOS**:
 ```bash
 cd tools/tcpwatch
 go build -o tcpwatch
+```
+
+**Windows**:
+```bash
+cd tools\tcpwatch
+go build -o tcpwatch.exe
+```
+
+Or use the npm script which handles this automatically:
+```bash
+cd tools/tcpwatch/app
+npm run build:tcpwatch
 ```
 
 ## Dev
@@ -87,7 +122,23 @@ Maintainers: see `.github/specs/tcpwatch-release.md` for the release/packaging c
 
 The app expects the `tcpwatch` binary to be bundled via `extraResources`.
 
+## Configuration
+
+All binary paths and settings can be configured via the in-app **Settings** page. See `CLAUDE.md` for the full configuration parameter reference.
+
+| Setting | Env Variable | Description |
+|---------|-------------|-------------|
+| Anthropic API Key | `ANTHROPIC_API_KEY` | Required for AI analysis |
+| Claude Model | `TCPWATCH_CLAUDE_MODEL` | Model override |
+| mcpcap | `TCPWATCH_MCPCAP_BIN` | Path to mcpcap binary |
+| tshark | `TSHARK_BIN` | Path to tshark |
+| editcap | `EDITCAP_BIN` | Path to editcap |
+| Wireshark | `WIRESHARK_BIN` | Path to Wireshark |
+| tcpwatch | `TCPWATCH_BIN` | Path to tcpwatch binary |
+| Reverse DNS | `TCPWATCH_RDNS` | Enable/disable reverse DNS |
+
 ## Notes
 
-- You can override the binary path with `TCPWATCH_BIN=/abs/path/to/tcpwatch`.
+- You can override the binary path with `TCPWATCH_BIN=/abs/path/to/tcpwatch` (or set it in Settings).
 - The UI consumes `tcpwatch -jsonl` (NDJSON snapshots).
+- On Windows, process information is gathered via PowerShell `Get-Process` instead of `witr`.
