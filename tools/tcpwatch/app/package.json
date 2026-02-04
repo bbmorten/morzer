@@ -1,7 +1,7 @@
 {
   "name": "tcpwatch-app",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.5.1",
   "author": "Mehmet Bulent Morten",
   "description": "macOS Electron UI for tcpwatch",
   "main": "dist-electron/electron/main.js",
