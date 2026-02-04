@@ -47,10 +47,6 @@
     ],
     "extraResources": [
       {
-        "from": "../tcpwatch",
-        "to": "tcpwatch"
-      },
-      {
         "from": "../../../.github/prompts/packet-analysis.md",
         "to": "prompts/packet-analysis.md"
       },
@@ -65,6 +61,24 @@
         "dmg",
         "zip",
         "pkg"
+      ],
+      "extraResources": [
+        {
+          "from": "../tcpwatch",
+          "to": "tcpwatch"
+        }
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "extraResources": [
+        {
+          "from": "../tcpwatch.exe",
+          "to": "tcpwatch.exe"
+        }
       ]
     }
   }

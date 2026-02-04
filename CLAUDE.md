@@ -16,7 +16,7 @@ morzer/
 ├── .github/
 │   ├── releases/             # Release notes (tcpwatch-app-vX.Y.Z.md)
 │   ├── prompts/              # AI analysis prompts (packet-analysis.md, dns-analysis.md)
-│   ├── workflows/            # CI/CD (ci.yml, tcpwatch-macos.yml)
+│   ├── workflows/            # CI/CD (ci.yml, tcpwatch-macos.yml, tcpwatch-windows.yml)
 │   └── skills/               # Project skills documentation
 ├── .claude/commands/         # Claude Code skills
 ├── captures/                 # Sample PCAP files
@@ -98,7 +98,8 @@ Create a new release for tcpwatch-app:
 ## CI/CD
 
 - **ci.yml** - Go format, vet, build, test on push/PR
-- **tcpwatch-macos.yml** - Build and publish macOS app on `tcpwatch-app-v*` tags
+- **tcpwatch-macos.yml** - Build and publish macOS app (arm64) on `tcpwatch-app-v*` tags
+- **tcpwatch-windows.yml** - Build and publish Windows app (x64, NSIS + zip) on `tcpwatch-app-v*` tags
 
 ## Configuration
 

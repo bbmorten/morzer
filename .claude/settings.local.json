@@ -16,7 +16,10 @@
       "Bash(pip install:*)",
       "Bash(\"C:\\\\Users\\\\admin\\\\AppData\\\\Local\\\\Packages\\\\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\\\\LocalCache\\\\local-packages\\\\Python311\\\\Scripts\\\\mcpcap.exe\" --help)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(gh release create:*)",
+      "Bash(git push:*)",
+      "Bash(gh:*)"
     ]
   }
 }
