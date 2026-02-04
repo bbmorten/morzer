@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(where:*)",
+      "Bash(cmd /c \"where go\")",
+      "Bash(cmd /c \"go version\")",
+      "Bash(powershell -Command \"Test-Path ''C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe''\")",
+      "Bash(powershell -Command \"$env:Path += '';C:\\\\Program Files\\\\Go\\\\bin''; go version\")",
+      "Bash(npm run build:electron:*)",
+      "Bash(npm install)",
+      "Bash(go build:*)",
+      "Bash(powershell:*)",
+      "Bash(npm run build:tcpwatch:*)",
+      "Bash(tools/tcpwatch/tcpwatch.exe:*)",
+      "Bash(pip show:*)",
+      "Bash(pip install:*)",
+      "Bash(\"C:\\\\Users\\\\admin\\\\AppData\\\\Local\\\\Packages\\\\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\\\\LocalCache\\\\local-packages\\\\Python311\\\\Scripts\\\\mcpcap.exe\" --help)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ]
+  }
+}
