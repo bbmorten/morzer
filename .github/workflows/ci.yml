@@ -22,7 +22,7 @@ jobs:
         working-directory: tools/tcpwatch
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: 'stable'
           cache-dependency-path: tools/tcpwatch/go.sum
